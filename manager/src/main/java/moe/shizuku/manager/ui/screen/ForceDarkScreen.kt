@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.R
 import moe.shizuku.manager.manage.ForceDark
 import moe.shizuku.manager.manage.InstalledPackages
@@ -281,7 +282,8 @@ fun ForceDarkScreen(bottomPadding: Dp, onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .alpha(contentAlpha)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .televisionTextInput(MaterialTheme.shapes.extraLarge),
             // Shut with the list while the gate is off: what is shown then is what is being kept,
             // not something to sieve.
             enabled = gateOn,

@@ -69,6 +69,7 @@ import moe.shizuku.manager.install.AppInstall
 import moe.shizuku.manager.module.ModuleCatalog
 import moe.shizuku.manager.module.ModuleCatalogException
 import moe.shizuku.manager.module.ModuleRepo
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.ui.component.cardOutline
@@ -311,7 +312,7 @@ fun CatalogScreen(
                     TextField(
                         value = query,
                         onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().televisionTextInput(TextFieldDefaults.shape),
                         placeholder = { Text(stringResource(R.string.catalog_search)) },
                         singleLine = true,
                         colors = TextFieldDefaults.colors(

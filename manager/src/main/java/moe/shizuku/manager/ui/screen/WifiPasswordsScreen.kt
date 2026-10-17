@@ -65,6 +65,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.R
 import moe.shizuku.manager.manage.WifiBackup
 import moe.shizuku.manager.manage.WifiControl
@@ -704,6 +705,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .televisionTextInput(MaterialTheme.shapes.extraLarge)
     )
 }
 

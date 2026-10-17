@@ -36,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.R
 import moe.shizuku.manager.files.PrivilegedFiles
 import moe.shizuku.manager.install.AppInstall
@@ -359,7 +361,7 @@ fun InstallerScreen(path: String?, bottomPadding: Dp, onBack: () -> Unit) {
                                 Text(stringResource(R.string.install_spoof_source_desc))
                             },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().televisionTextInput(OutlinedTextFieldDefaults.shape)
                         )
 
                         // Sits under the spoofed source because it is the same claim from the other
@@ -376,6 +378,7 @@ fun InstallerScreen(path: String?, bottomPadding: Dp, onBack: () -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 12.dp)
+                                .televisionTextInput(OutlinedTextFieldDefaults.shape)
                         )
                     }
                 }

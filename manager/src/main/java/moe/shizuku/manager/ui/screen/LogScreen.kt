@@ -74,6 +74,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
@@ -723,7 +724,8 @@ private fun SearchField(
         onValueChange = onQuery,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .televisionTextInput(MaterialTheme.shapes.extraLarge),
         placeholder = { Text(hint) },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = {

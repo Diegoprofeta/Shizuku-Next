@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -478,7 +479,7 @@ private fun Field(value: String, onValueChange: (String) -> Unit, label: String)
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().televisionTextInput(OutlinedTextFieldDefaults.shape),
         label = { Text(label) },
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium

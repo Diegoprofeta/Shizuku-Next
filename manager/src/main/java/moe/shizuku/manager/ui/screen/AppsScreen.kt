@@ -47,8 +47,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import moe.shizuku.manager.ui.component.RefreshBox
+import moe.shizuku.manager.ui.component.TelevisionRefreshButton
 import moe.shizuku.manager.ui.component.ExpressiveSwitch
+import moe.shizuku.manager.ui.component.televisionTextInput
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -328,6 +330,14 @@ fun AppsScreen(
         }
     }
 
+    val refresh: () -> Unit = {
+        refreshing = true
+        // The derived sets are worked out per list, so a re-read has to ask for
+        // them again too: a pull is how you pick up a grant made elsewhere.
+        derivedFor = null
+        refreshKey++
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectionMode) {
@@ -375,6 +385,7 @@ fun AppsScreen(
                             }
                         }) { Text(stringResource(R.string.app_management_toggle_all)) }
                     }
+                    TelevisionRefreshButton(refreshing, refresh)
                     IconButton(onClick = { sortMenu = true }) {
                         Icon(Icons.Filled.Sort, contentDescription = null)
                     }
@@ -468,7 +479,8 @@ fun AppsScreen(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .televisionTextInput(MaterialTheme.shapes.extraLarge),
             placeholder = { Text(stringResource(R.string.app_management_search_hint)) },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {
@@ -487,15 +499,9 @@ fun AppsScreen(
             )
         )
 
-        PullToRefreshBox(
+        RefreshBox(
             isRefreshing = refreshing,
-            onRefresh = {
-                refreshing = true
-                // The derived sets are worked out per list, so a re-read has to ask for
-                // them again too: a pull is how you pick up a grant made elsewhere.
-                derivedFor = null
-                refreshKey++
-            },
+            onRefresh = refresh,
             modifier = Modifier.fillMaxSize()
         ) {
         LazyColumn(

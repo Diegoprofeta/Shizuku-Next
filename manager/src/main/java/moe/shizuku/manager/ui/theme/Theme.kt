@@ -7,7 +7,10 @@ import android.os.Build
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.RippleConfiguration
+import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
@@ -16,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -25,6 +29,7 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.utils.EnvironmentUtils
 
 /** Shizuku brand indigo, matching the XML theme's primaryColor. */
 private val BrandColor = Color(0xFF3F51B5)
@@ -35,6 +40,28 @@ private val BrandColor = Color(0xFF3F51B5)
  * [moe.shizuku.manager.ui.component.SegmentedColumn].
  */
 val LocalAmoledTheme = staticCompositionLocalOf { false }
+
+/**
+ * True on a television. A TV is driven by a remote's D-pad rather than a finger, so the few
+ * places that lay themselves out for a thumb - the floating tab bar above all - read this and
+ * do something a remote can reach instead. Everything else is the phone layout as it is.
+ */
+val LocalTelevision = staticCompositionLocalOf { false }
+
+/**
+ * The state layers on a TV. With a remote, focus is the only cursor there is, and the stock
+ * focused layer - a tenth of the content colour - is close to invisible from a sofa: on a
+ * black page the focused button was a shade of grey away from the rest. Pressed and dragged
+ * stay as they are; only focus is raised to something that can be seen across a room.
+ */
+private val TelevisionRipple = RippleConfiguration(
+    rippleAlpha = RippleAlpha(
+        draggedAlpha = 0.16f,
+        focusedAlpha = 0.32f,
+        hoveredAlpha = 0.08f,
+        pressedAlpha = 0.10f
+    )
+)
 
 /** Bumped when a theme preference changes so the theme re-reads the prefs. */
 object ThemeState {
@@ -117,7 +144,14 @@ fun ShizukuTheme(content: @Composable () -> Unit) {
         }
     }
 
-    CompositionLocalProvider(LocalAmoledTheme provides amoled) {
+    val television = remember { EnvironmentUtils.isTelevision() }
+
+    CompositionLocalProvider(
+        LocalAmoledTheme provides amoled,
+        LocalTelevision provides television,
+        LocalRippleConfiguration provides
+            if (television) TelevisionRipple else LocalRippleConfiguration.current
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             motionScheme = MotionScheme.expressive(),

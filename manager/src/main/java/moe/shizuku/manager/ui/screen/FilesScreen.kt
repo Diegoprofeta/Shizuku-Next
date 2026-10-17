@@ -670,6 +670,7 @@ private fun FileRow(
     ) {
         SegmentedListItem(
             modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            focusableOnTelevision = false,
             headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingContent = {
                 if (detail != null) {

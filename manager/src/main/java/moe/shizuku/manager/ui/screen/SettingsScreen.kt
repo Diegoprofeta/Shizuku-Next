@@ -93,6 +93,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.settings.BugReportDialogActivity
 import moe.shizuku.manager.ui.Detail
+import moe.shizuku.manager.ui.televisionReturnFocus
 import moe.shizuku.manager.ui.component.SegmentedColumn
 import moe.shizuku.manager.ui.theme.ThemeState
 import moe.shizuku.manager.ui.component.SegmentedListItem
@@ -672,6 +673,7 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
                     // same question as the rest of that page (may this app do its job?)
                     item {
                         SegmentedListItem(
+                            modifier = Modifier.televisionReturnFocus(Detail.PERMISSIONS),
                             centerSlots = true,
                             leadingContent = { SettingsIcon(Icons.Outlined.VerifiedUser) },
                             headlineContent = { Text(stringResource(R.string.settings_permissions)) },
@@ -684,6 +686,7 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
                     }
                     item {
                         SegmentedListItem(
+                            modifier = Modifier.televisionReturnFocus(Detail.STEALTH),
                             centerSlots = true,
                             leadingContent = { SettingsIcon(Icons.Outlined.VisibilityOff) },
                             headlineContent = { Text(stringResource(R.string.tools_stealth)) },
@@ -696,6 +699,7 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
                     }
                     item {
                         SegmentedListItem(
+                            modifier = Modifier.televisionReturnFocus(Detail.TERMINAL),
                             centerSlots = true,
                             leadingContent = { SettingsIcon(Icons.Outlined.Terminal) },
                             headlineContent = { Text(stringResource(R.string.tools_terminal)) },
@@ -708,6 +712,7 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
                     }
                     item {
                         SegmentedListItem(
+                            modifier = Modifier.televisionReturnFocus(Detail.INTENTS),
                             centerSlots = true,
                             leadingContent = { SettingsIcon(Icons.Outlined.Bolt) },
                             headlineContent = { Text(stringResource(R.string.intents_title)) },

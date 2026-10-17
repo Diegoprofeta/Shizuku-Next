@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.R
@@ -361,7 +362,8 @@ fun ActivitiesScreen(bottomPadding: Dp, onBack: () -> Unit) {
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .televisionTextInput(MaterialTheme.shapes.extraLarge),
             placeholder = { Text(stringResource(R.string.app_management_search_hint)) },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {

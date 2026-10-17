@@ -3,11 +3,11 @@ package moe.shizuku.manager.ui.screen
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.util.Log
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.AppConstants
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +38,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import moe.shizuku.manager.ui.component.RefreshBox
+import moe.shizuku.manager.ui.component.TelevisionRefreshButton
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -233,6 +234,14 @@ fun ManageScreen(
         return
     }
 
+    val refresh: () -> Unit = {
+        refreshing = true
+        // The hidden set is worked out per list, so a re-read has to ask for it
+        // again too: a pull is how you pick up an app installed elsewhere.
+        derivedFor = -1
+        refreshKey++
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text(stringResource(R.string.tab_manage)) },
@@ -250,6 +259,7 @@ fun ManageScreen(
                 }
             },
             actions = {
+                TelevisionRefreshButton(refreshing, refresh)
                 IconButton(onClick = { sortMenu = true }) {
                     Icon(Icons.Filled.Sort, contentDescription = null)
                 }
@@ -311,7 +321,8 @@ fun ManageScreen(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .televisionTextInput(MaterialTheme.shapes.extraLarge),
             placeholder = { Text(stringResource(R.string.manage_search_hint)) },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {
@@ -329,15 +340,9 @@ fun ManageScreen(
             )
         )
 
-        PullToRefreshBox(
+        RefreshBox(
             isRefreshing = refreshing,
-            onRefresh = {
-                refreshing = true
-                // The hidden set is worked out per list, so a re-read has to ask for it
-                // again too: a pull is how you pick up an app installed elsewhere.
-                derivedFor = -1
-                refreshKey++
-            },
+            onRefresh = refresh,
             modifier = Modifier.fillMaxSize()
         ) {
             LazyColumn(
@@ -350,7 +355,7 @@ fun ManageScreen(
 
                     SegmentedCard {
                         SegmentedListItem(
-                            modifier = Modifier.clickable { openPackage = pi.packageName },
+                            onClick = { openPackage = pi.packageName },
                             leadingContent = {
                                 // A removed app has no icon to load the row keeps the
                                 // space so the labels stay aligned with the rest.

@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -42,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.R
@@ -248,7 +250,7 @@ fun StealthScreen(onBack: () -> Unit) {
                     OutlinedTextField(
                         value = packageName,
                         onValueChange = { packageName = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().televisionTextInput(OutlinedTextFieldDefaults.shape),
                         label = { Text(stringResource(R.string.stealth_package_name)) },
                         supportingText = {
                             Text(
@@ -268,7 +270,7 @@ fun StealthScreen(onBack: () -> Unit) {
                     OutlinedTextField(
                         value = displayName,
                         onValueChange = { displayName = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().televisionTextInput(OutlinedTextFieldDefaults.shape),
                         label = { Text(stringResource(R.string.stealth_display_name)) },
                         supportingText = {
                             Text(

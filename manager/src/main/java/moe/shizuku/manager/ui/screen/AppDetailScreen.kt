@@ -481,10 +481,14 @@ fun AppDetailScreen(
                             }
                             item {
                                 SegmentedListItem(
+                                    // The switch is the stop on a TV, not the row around it.
+                                    focusableOnTelevision = false,
                                     headlineContent = { Text(stringResource(R.string.app_battery_unrestricted)) },
                                     supportingContent = { Text(stringResource(R.string.app_battery_unrestricted_note)) },
                                     trailingContent = {
                                         ExpressiveSwitch(
+                                            // Keeps a TV's focus while busy or locked.
+                                            focusableWhenDisabled = true,
                                             checked = app.batteryUnrestricted,
                                             enabled = !busy,
                                             onCheckedChange = { checked ->
@@ -514,10 +518,14 @@ fun AppDetailScreen(
                         SegmentedColumn {
                             item {
                                 SegmentedListItem(
+                                    // The switch is the stop on a TV, not the row around it.
+                                    focusableOnTelevision = false,
                                     headlineContent = { Text(stringResource(R.string.app_network_block)) },
                                     supportingContent = { Text(stringResource(R.string.app_network_block_note)) },
                                     trailingContent = {
                                         ExpressiveSwitch(
+                                            // Keeps a TV's focus while busy or locked.
+                                            focusableWhenDisabled = true,
                                             checked = app.networkBlocked == true,
                                             enabled = !busy,
                                             onCheckedChange = { checked ->
@@ -668,10 +676,14 @@ private fun PermissionRow(
     }
 
     SegmentedListItem(
+        // The switch is the stop on a TV, not the row around it.
+        focusableOnTelevision = false,
         headlineContent = { Text(permission.short) },
         supportingContent = { Text(supporting) },
         trailingContent = {
             ExpressiveSwitch(
+                // Keeps a TV's focus while busy or locked.
+                focusableWhenDisabled = true,
                 checked = permission.granted,
                 // A permission adb cannot change stays readable but not switchable; the
                 // row says why, so it does not look like a bug.

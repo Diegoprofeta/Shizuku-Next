@@ -55,6 +55,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,7 +64,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import moe.shizuku.manager.ui.component.televisionTextInput
+import moe.shizuku.manager.ui.component.RefreshBox
+import moe.shizuku.manager.ui.component.TelevisionRefreshButton
+import moe.shizuku.manager.ui.component.televisionEnterOnRight
+import moe.shizuku.manager.ui.component.televisionFocusShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -297,6 +302,14 @@ fun ModulesScreen(
         }
     }
 
+    val refresh: () -> Unit = {
+        refreshing = true
+        scope.launch {
+            refreshNow()
+            refreshing = false
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             TopAppBar(
@@ -307,7 +320,7 @@ fun ModulesScreen(
                         TextField(
                             value = query,
                             onValueChange = { query = it },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().televisionTextInput(TextFieldDefaults.shape),
                             placeholder = { Text(stringResource(R.string.modules_search)) },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
@@ -323,6 +336,7 @@ fun ModulesScreen(
                 },
                 windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
                 actions = {
+                    TelevisionRefreshButton(refreshing, refresh)
                     if (searching) {
                         IconButton(onClick = { searching = false; query = "" }) {
                             Icon(Icons.Filled.Close, contentDescription = null)
@@ -409,15 +423,9 @@ fun ModulesScreen(
 
             // Their pull-to-refresh: a module is somebody else's file, and it changes from
             // outside as often as from here.
-            PullToRefreshBox(
+            RefreshBox(
                 isRefreshing = refreshing,
-                onRefresh = {
-                    refreshing = true
-                    scope.launch {
-                        refreshNow()
-                        refreshing = false
-                    }
-                }
+                onRefresh = refresh
             ) {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -536,6 +544,7 @@ fun ModulesScreen(
 
         FloatingActionButton(
             modifier = Modifier
+                .televisionFocusShape(FloatingActionButtonDefaults.shape)
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = bottomPadding + 16.dp),
             onClick = { installDialog = true }
@@ -792,6 +801,9 @@ private fun ModuleCard(
             // Otherwise invisible on the black theme, where the card and the page are the same
             // colour: the same hairline the app's own cards draw.
             .cardOutline()
+            // The switch and, once expanded, the actions sit inside the card, which is a button
+            // of its own.
+            .televisionEnterOnRight()
             // Their gesture for the trust action: a long press reveals it, another hides it.
             .combinedClickable(
                 onClick = onExpandToggle,

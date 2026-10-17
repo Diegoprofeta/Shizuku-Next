@@ -44,7 +44,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import moe.shizuku.manager.ui.component.televisionTextInput
+import moe.shizuku.manager.ui.component.RefreshBox
+import moe.shizuku.manager.ui.component.TelevisionRefreshButton
+import moe.shizuku.manager.ui.component.televisionEnterOnRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -135,6 +138,14 @@ fun ModuleRepoScreen(
         matched.sortedWith(sort.order())
     }
 
+    val refresh: () -> Unit = {
+        refreshing = true
+        scope.launch {
+            load()
+            refreshing = false
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
@@ -144,7 +155,7 @@ fun ModuleRepoScreen(
                     TextField(
                         value = query,
                         onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().televisionTextInput(TextFieldDefaults.shape),
                         placeholder = { Text(stringResource(R.string.modules_search)) },
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
@@ -165,6 +176,7 @@ fun ModuleRepoScreen(
                 }
             },
             actions = {
+                TelevisionRefreshButton(refreshing, refresh)
                 if (searching) {
                     IconButton(onClick = { searching = false; query = "" }) {
                         Icon(Icons.Filled.Close, contentDescription = null)
@@ -256,15 +268,9 @@ fun ModuleRepoScreen(
             }
 
             else -> {
-                PullToRefreshBox(
+                RefreshBox(
                     isRefreshing = refreshing,
-                    onRefresh = {
-                        refreshing = true
-                        scope.launch {
-                            load()
-                            refreshing = false
-                        }
-                    }
+                    onRefresh = refresh
                 ) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -347,6 +353,8 @@ private fun ModuleRepoCard(
             .clip(MaterialTheme.shapes.large)
             // Invisible on the black theme without it: see Modifier.cardOutline.
             .cardOutline()
+            // The install button sits inside the card, which is a button of its own.
+            .televisionEnterOnRight()
             .clickable(onClick = onOpen)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {

@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
@@ -624,7 +625,8 @@ fun LabsToggleScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .alpha(contentAlpha)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .televisionTextInput(MaterialTheme.shapes.extraLarge),
             // A search is part of working through the list, and the list is shut while the gate is
             // off: what is shown then is what is being kept, not something to sieve.
             enabled = gateOn,
