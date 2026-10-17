@@ -171,19 +171,40 @@ jobs:
           number=${{ steps.pr.outputs.number }}
 
           # The step above pushes to this branch when there is an apostrophe to escape, and GitHub
-          # decides whether a pull request can be merged asynchronously: an attempt in the seconds
-          # after a push is answered "Pull Request is not mergeable" while that answer is still
-          # unknown. So it is waited for, with a bound, rather than assumed - the first attempt of
-          # this had the check pass and the merge refused for exactly that reason, with the pull
-          # request reading MERGEABLE a moment later.
+          # decides whether a pull request can be merged asynchronously. Reading `mergeable` can
+          # still answer MERGEABLE from before that push, and the merge itself is then refused
+          # with "Pull Request is not mergeable". So the merge is what is retried here, not only
+          # the state that precedes it. A refusal for any other reason is reported and stops at
+          # once rather than being retried.
           for attempt in $(seq 1 12); do
-            state=$(gh pr view "$number" --json mergeable -q .mergeable)
-            [ "$state" = "MERGEABLE" ] && break
-            echo "mergeable is $state, waiting"
+            state=$(gh pr view "$number" --json state,mergeable \
+              -q '.state + " " + (.mergeable // "UNKNOWN")')
+
+            case "$state" in
+              "MERGED "*) echo "already merged"; exit 0 ;;
+              "OPEN MERGEABLE")
+                if gh pr merge "$number" \
+                    --squash --delete-branch \
+                    --subject 'chore(i18n): new translations from Crowdin' \
+                    --body 'Merged automatically: only translated strings.xml files changed.' \
+                    2>merge.err; then
+                  exit 0
+                fi
+                if grep -qi 'not mergeable' merge.err; then
+                  echo "mergeable said yes, the merge was refused; waiting"
+                else
+                  cat merge.err >&2
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "state is $state, waiting"
+                ;;
+            esac
+
             sleep 5
           done
 
-          gh pr merge "$number" \
-            --squash --delete-branch \
-            --subject 'chore(i18n): new translations from Crowdin' \
-            --body 'Merged automatically: only translated strings.xml files changed.'
+          echo "::error::could not merge pull request $number"
+          gh pr view "$number" --json state,mergeable,mergeStateStatus
+          exit 1
