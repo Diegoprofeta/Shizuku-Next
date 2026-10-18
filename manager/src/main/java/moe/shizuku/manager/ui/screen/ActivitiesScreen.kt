@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -60,6 +61,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButton
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.R
 import moe.shizuku.manager.manage.Activities
@@ -385,8 +387,10 @@ fun ActivitiesScreen(bottomPadding: Dp, onBack: () -> Unit) {
         )
 
         Box(modifier = Modifier.fillMaxSize()) {
+            val listState = rememberLazyListState()
             if (packageName == null) {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -433,6 +437,7 @@ fun ActivitiesScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -530,6 +535,12 @@ fun ActivitiesScreen(bottomPadding: Dp, onBack: () -> Unit) {
                     }
                 }
             }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 

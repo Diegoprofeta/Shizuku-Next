@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -72,6 +73,7 @@ import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.ChipEmphasis
 import moe.shizuku.manager.ui.component.ChoiceRow
 import moe.shizuku.manager.ui.component.SegmentedCard
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.SegmentedColumn
 import moe.shizuku.manager.ui.component.SegmentedListItem
 import moe.shizuku.manager.ui.component.StatusChip
@@ -205,7 +207,9 @@ fun AppDetailScreen(
         val app = loaded
 
         Box(modifier = Modifier.fillMaxSize()) {
+            val listState = rememberLazyListState()
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = bottomPadding),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -565,6 +569,12 @@ fun AppDetailScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding + 16.dp)
+            )
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
             )
         }
     }

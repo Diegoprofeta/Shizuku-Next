@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -64,6 +66,7 @@ import moe.shizuku.manager.files.PrivilegedFiles
 import moe.shizuku.manager.install.AppInstall
 import moe.shizuku.manager.install.PackageInspect
 import moe.shizuku.manager.ui.component.PillButton
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.SegmentedCard
 import moe.shizuku.manager.ui.component.SegmentedColumn
 import moe.shizuku.manager.ui.component.SegmentedListItem
@@ -222,16 +225,23 @@ fun InstallerScreen(path: String?, bottomPadding: Dp, onBack: () -> Unit) {
             }
         )
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 4.dp,
-                end = 16.dp,
-                bottom = bottomPadding
-            ),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 4.dp,
+                    end = 16.dp,
+                    bottom = bottomPadding
+                ),
+                verticalArrangement = Arrangement.spacedBy(13.dp)
+            ) {
             item {
                 SegmentedCard {
                     SegmentedListItem(
@@ -489,6 +499,13 @@ fun InstallerScreen(path: String?, bottomPadding: Dp, onBack: () -> Unit) {
                     }
                 }
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 }

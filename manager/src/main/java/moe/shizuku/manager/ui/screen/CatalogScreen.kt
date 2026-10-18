@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -71,6 +72,7 @@ import moe.shizuku.manager.module.ModuleCatalogException
 import moe.shizuku.manager.module.ModuleRepo
 import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButton
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.ui.component.cardOutline
 import moe.shizuku.manager.utils.CustomTabsHelper
@@ -352,10 +354,17 @@ fun CatalogScreen(
             LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
             item {
                 // The site's three controls, one row: what each is set to is inside its menu, so
                 // the buttons carry the name of the control and nothing else.
@@ -551,6 +560,13 @@ fun CatalogScreen(
                     }
                 }
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = 16.dp,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 

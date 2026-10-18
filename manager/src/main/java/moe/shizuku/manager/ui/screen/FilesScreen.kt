@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -91,6 +93,7 @@ import moe.shizuku.manager.files.kindOf
 import moe.shizuku.manager.files.mimeOf
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.PillButton
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.ui.component.SegmentedCard
 import moe.shizuku.manager.ui.component.SegmentedListItem
@@ -509,8 +512,16 @@ fun FilesScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 )
             }
 
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+            else -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                val listState = rememberLazyListState()
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     top = 4.dp,
@@ -561,6 +572,14 @@ fun FilesScreen(bottomPadding: Dp, onBack: () -> Unit) {
                         onLongClick = { selected = toggle(selected, full) }
                     )
                 }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
+            }
             }
         }
     }

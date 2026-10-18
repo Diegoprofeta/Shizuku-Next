@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Refresh
@@ -49,6 +50,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.manage.DeviceInfo
 import moe.shizuku.manager.ui.component.AppFilterChip
 import moe.shizuku.manager.ui.component.CenteredMessage
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.SegmentedCard
 import moe.shizuku.manager.ui.component.SegmentedColumn
 import moe.shizuku.manager.ui.component.SegmentedListItem
@@ -125,16 +127,23 @@ fun DeviceInfoScreen(bottomPadding: Dp, onBack: () -> Unit) {
             return@Column
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 4.dp,
-                end = 16.dp,
-                bottom = bottomPadding
-            ),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 4.dp,
+                    end = 16.dp,
+                    bottom = bottomPadding
+                ),
+                verticalArrangement = Arrangement.spacedBy(13.dp)
+            ) {
             battery?.let { now ->
                 item { SectionTitle(stringResource(R.string.device_battery)) }
                 item { BatteryHeadline(now) }
@@ -527,6 +536,13 @@ fun DeviceInfoScreen(bottomPadding: Dp, onBack: () -> Unit) {
                     }
                 }
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 }

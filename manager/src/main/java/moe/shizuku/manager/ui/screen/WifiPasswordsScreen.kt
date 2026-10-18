@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -74,6 +75,7 @@ import moe.shizuku.manager.manage.WifiPasswords
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.PillButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.SegmentedCard
 import moe.shizuku.manager.ui.component.SegmentedListItem
 
@@ -374,16 +376,23 @@ fun WifiPasswordsScreen(bottomPadding: Dp, onBack: () -> Unit) {
                     return@Column
                 }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = 4.dp,
-                        end = 16.dp,
-                        bottom = bottomPadding
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(13.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 ) {
+                    val listState = rememberLazyListState()
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            top = 4.dp,
+                            end = 16.dp,
+                            bottom = bottomPadding
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(13.dp)
+                    ) {
                     items(rows, key = { it.ssid }) { network ->
                         val isConnected = network.ssid == connected
                         val isRevealed = network.ssid in revealed
@@ -524,6 +533,13 @@ fun WifiPasswordsScreen(bottomPadding: Dp, onBack: () -> Unit) {
                             )
                         }
                     }
+                }
+
+                    ScrollToTopButton(
+                        listState = listState,
+                        bottomPadding = bottomPadding,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    )
                 }
             }
         }

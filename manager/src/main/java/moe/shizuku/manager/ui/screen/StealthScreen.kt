@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -38,6 +40,7 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -46,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.R
 import moe.shizuku.manager.stealth.Action
 import moe.shizuku.manager.stealth.ApkType
@@ -160,10 +164,17 @@ fun StealthScreen(onBack: () -> Unit) {
             LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(13.dp)
+            ) {
             // The description lives on the settings row; repeating it here would
             // just push the actual content down.
             // Tapping this card copies a snippet the user can send to a developer
@@ -331,6 +342,13 @@ fun StealthScreen(onBack: () -> Unit) {
                     )
                 }
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = 16.dp,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 

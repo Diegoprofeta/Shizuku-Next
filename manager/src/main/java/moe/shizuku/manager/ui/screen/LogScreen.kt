@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,6 +57,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -76,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButtonQuiet
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
 import moe.shizuku.manager.manage.InstalledPackages
@@ -756,18 +759,26 @@ private fun LogLineList(
     bottomPadding: Dp,
     listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState()
 ) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = bottomPadding),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        // Keyed on the line's own identity rather than on what it says: a log holds lines that
-        // are identical in every field, and a key that repeats is a crash rather than a duplicate
-        // row.
-        items(lines, key = { it.id }) { line ->
-            LogLine(line, query)
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = bottomPadding),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            // Keyed on the line's own identity rather than on what it says: a log holds lines that
+            // are identical in every field, and a key that repeats is a crash rather than a
+            // duplicate row.
+            items(lines, key = { it.id }) { line ->
+                LogLine(line, query)
+            }
         }
+
+        ScrollToTopButton(
+            listState = listState,
+            bottomPadding = bottomPadding,
+            modifier = Modifier.align(Alignment.BottomEnd)
+        )
     }
 }
 

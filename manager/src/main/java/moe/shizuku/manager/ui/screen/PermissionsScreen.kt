@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -56,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.ui.component.PillButton
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.R
 import moe.shizuku.manager.home.isAccessibilityEnabled
@@ -166,10 +168,17 @@ fun PermissionsScreen(onBack: () -> Unit) {
             }
         )
 
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(13.dp)
+            ) {
             item {
                 PermissionRow(
                     icon = Icons.Rounded.Notifications,
@@ -346,6 +355,13 @@ fun PermissionsScreen(onBack: () -> Unit) {
                     }
                 )
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = 16.dp,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 }

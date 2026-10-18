@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,6 +47,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.RefreshBox
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.TelevisionRefreshButton
 import moe.shizuku.manager.ui.component.televisionEnterOnRight
 import androidx.compose.runtime.Composable
@@ -268,12 +270,19 @@ fun ModuleRepoScreen(
             }
 
             else -> {
-                RefreshBox(
-                    isRefreshing = refreshing,
-                    onRefresh = refresh
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                    val listState = rememberLazyListState()
+                    RefreshBox(
+                        isRefreshing = refreshing,
+                        onRefresh = refresh
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
@@ -317,6 +326,13 @@ fun ModuleRepoScreen(
                             )
                         }
                     }
+                }
+
+                    ScrollToTopButton(
+                        listState = listState,
+                        bottomPadding = 16.dp,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    )
                 }
             }
         }
