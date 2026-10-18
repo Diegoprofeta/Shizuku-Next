@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -555,7 +556,9 @@ private fun SavedTab(bottomPadding: Dp) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        val listState = rememberLazyListState()
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = bottomPadding)
         ) {
@@ -591,6 +594,12 @@ private fun SavedTab(bottomPadding: Dp) {
                 )
             }
         }
+
+        ScrollToTopButton(
+            listState = listState,
+            bottomPadding = bottomPadding,
+            modifier = Modifier.align(Alignment.BottomEnd)
+        )
     }
 }
 
