@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import java.io.File
 import moe.shizuku.manager.ui.component.PillButton
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.BuildConfig
 import android.widget.Toast
@@ -27,12 +28,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AdminPanelSettings
@@ -311,10 +315,17 @@ fun HomeScreen(bottomPadding: Dp) {
             windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
         )
 
-        LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = bottomPadding),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = bottomPadding),
+                verticalArrangement = Arrangement.spacedBy(13.dp)
+            ) {
             // A warning about where Android says Shizuku's permission lives, and nothing more:
             // every part of the app works with it wrong, but other apps look Shizuku up by that
             // permission, so finding out what they find is worth saying - once, and out of the way.
@@ -852,6 +863,13 @@ fun HomeScreen(bottomPadding: Dp) {
                     }
                 )
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 
