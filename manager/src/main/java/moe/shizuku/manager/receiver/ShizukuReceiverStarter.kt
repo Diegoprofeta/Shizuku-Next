@@ -68,6 +68,9 @@ object ShizukuReceiverStarter {
     ) {
         // A start request from any entry point clears manual-stop suppression.
         ShizukuSettings.setManuallyStopped(false)
+        // And it ends the watchdog's boot gate: a server asked for is a server worth keeping
+        // alive, so a failed start from here may be retried.
+        ShizukuSettings.setServerRanSinceBoot(true)
 
         // Ask the binder rather than trusting the last thing this process heard. A server
         // stopped from somewhere else, or one that died while the manager was not looking,

@@ -6,6 +6,7 @@ import android.content.ContextWrapper;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.provider.Settings;
 import android.text.TextUtils;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
@@ -29,6 +30,8 @@ public class ShizukuSettings {
         public static final String KEY_START_ON_BOOT = "start_on_boot";
         public static final String KEY_ADB_WITHOUT_DEVELOPER_OPTIONS = "adb_without_developer_options";
         public static final String KEY_WATCHDOG = "watchdog";
+        public static final String KEY_SERVER_RAN_SINCE_BOOT = "server_ran_since_boot";
+        public static final String KEY_BOOT_COUNT = "boot_count";
         public static final String KEY_TCP_MODE = "tcp_mode";
         public static final String KEY_TCP_PORT = "tcp_port";
         public static final String KEY_AUTO_DISABLE_USB_DEBUGGING = "auto_disable_usb_debugging";
@@ -303,6 +306,53 @@ public class ShizukuSettings {
 
     public static void setManuallyStopped(boolean stopped) {
         getPreferences().edit().putBoolean(Keys.KEY_MANUALLY_STOPPED, stopped).apply();
+    }
+
+    /**
+     * Whether the server has run since the device last booted.
+     *
+     * This is what lets the watchdog tell a server that died from one that was never started:
+     * with start on boot off, a reboot leaves it down on purpose, and that is not an outage to
+     * recover from. Set true by a start request or a confirmed RUNNING state, and cleared when a
+     * new boot is noticed.
+     */
+    public static boolean getServerRanSinceBoot() {
+        return getPreferences().getBoolean(Keys.KEY_SERVER_RAN_SINCE_BOOT, false);
+    }
+
+    public static void setServerRanSinceBoot(boolean ran) {
+        getPreferences().edit().putBoolean(Keys.KEY_SERVER_RAN_SINCE_BOOT, ran).apply();
+    }
+
+    /**
+     * Whether the watchdog may start the server right now.
+     *
+     * Two ways to say yes: the user asked for a start at boot, or the server has run in this boot
+     * and is therefore a server worth keeping alive. With both off, the watchdog watches and waits.
+     */
+    public static boolean isWatchdogStartAllowed() {
+        return getPreferences().getBoolean(Keys.KEY_START_ON_BOOT, false) || getServerRanSinceBoot();
+    }
+
+    /**
+     * Forgets the server's run state when the device has rebooted since the last read.
+     *
+     * BOOT_COUNT is the platform's own count, so this does not depend on a clock that can move,
+     * and it works even when the boot receiver is disabled because both settings that need it
+     * are off: the app is still started at boot by WorkManager, and this runs there.
+     */
+    public static void noteBootIfNeeded(Context context) {
+        int bootCount = Settings.Global.getInt(
+                context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+        if (bootCount <= 0) return;
+
+        int stored = getPreferences().getInt(Keys.KEY_BOOT_COUNT, -1);
+        if (bootCount == stored) return;
+
+        getPreferences().edit()
+                .putInt(Keys.KEY_BOOT_COUNT, bootCount)
+                .putBoolean(Keys.KEY_SERVER_RAN_SINCE_BOOT, false)
+                .apply();
     }
 
     public static final int ADB_TRANSPORT_UNKNOWN = 0;

@@ -46,6 +46,10 @@ class ShizukuApplication : Application() {
 
     private fun init(context: Context) {
         ShizukuSettings.initialize(context)
+        // A reboot starts the server's run over: with start on boot off it is down on purpose,
+        // and the watchdog must not read that as a crash. The app is started at boot by
+        // WorkManager even when the boot receiver is disabled, so this is where it is noticed.
+        ShizukuSettings.noteBootIfNeeded(context)
         // The starter writes its own log into this app's external directories when a device
         // exploit runs it, and they are only created on first use: create both now, so the
         // paths exist before anything tries to write to them. Without this a start that

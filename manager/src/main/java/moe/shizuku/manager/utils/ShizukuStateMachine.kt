@@ -68,6 +68,9 @@ object ShizukuStateMachine {
             // later crash is auto-restarted by the watchdog.
             if (newState == State.RUNNING) {
                 ShizukuSettings.setManuallyStopped(false)
+                // A server that is up is one the watchdog may keep up: the boot gate is over
+                // until the next reboot.
+                ShizukuSettings.setServerRanSinceBoot(true)
                 // The server is up, so it can hand us the ADB-only permission the wireless
                 // flow needs the user shouldn't have to reach for a computer for it.
                 grantWriteSecureSettingsIfNeeded()

@@ -148,6 +148,13 @@ class WatchdogService : Service() {
             // can flip the state to RUNNING before we probe it.
             delay(BINDER_GRACE_MS)
             if (ShizukuSettings.getManuallyStopped()) return@launch
+            // With start on boot off and a server that has not run in this boot, "not running"
+            // is not a crash: it is the state the user chose for a reboot. Wait for a start to
+            // make this a server worth keeping alive; see [ShizukuSettings.isWatchdogStartAllowed].
+            if (!ShizukuSettings.isWatchdogStartAllowed()) {
+                Diag.debug(TAG, "Server not started since boot and start on boot is off; not starting it")
+                return@launch
+            }
             // A replacement is in flight: the old server being gone right now is the point
             // of it, and starting another one would race it.
             if (WatchdogGuard.isExpectingDeath()) return@launch
@@ -193,6 +200,9 @@ class WatchdogService : Service() {
             while (isActive) {
                 delay(RECOVERY_POLL_MS)
                 if (ShizukuSettings.getManuallyStopped()) continue
+                // Nothing to recover until the server has run in this boot, when start on boot
+                // is off; the state listener wakes this loop up once it does.
+                if (!ShizukuSettings.isWatchdogStartAllowed()) continue
                 // The local answer first because it is free; the probe below asks the binder.
                 if (ShizukuStateMachine.isRunning()) continue
                 checkServerAndRestartIfDead()
@@ -203,6 +213,13 @@ class WatchdogService : Service() {
     private fun attemptRestart() {
         if (WatchdogGuard.isExpectingDeath() || ShizukuSettings.getManuallyStopped()) {
             Diag.debug(TAG, "Restart attempt skipped: one is expected, or the stop was deliberate")
+            return
+        }
+
+        // The boot gate: start on boot off and no run yet in this boot means the server is down
+        // because nobody asked for it, and starting it here would be a boot start by another name.
+        if (!ShizukuSettings.isWatchdogStartAllowed()) {
+            Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
             return
         }
 
