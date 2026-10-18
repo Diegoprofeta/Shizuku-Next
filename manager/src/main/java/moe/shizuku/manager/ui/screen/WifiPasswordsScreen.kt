@@ -392,19 +392,27 @@ fun WifiPasswordsScreen(bottomPadding: Dp, onBack: () -> Unit) {
                         SegmentedCard {
                             SegmentedListItem(
                                 headlineContent = { Text(network.ssid) },
-                                supportingContent = {
-                                    PasswordLine(
-                                        password = network.password,
-                                        security = network.security,
-                                        revealed = isRevealed,
-                                        connected = isConnected
-                                    )
-                                },
                                 leadingContent = {
                                     Icon(Icons.Outlined.Wifi, contentDescription = null)
                                 },
-                                trailingContent = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                // The actions share the line under the name rather than the
+                                // space beside it. Beside it they took a third of the card and a
+                                // long name like "DIRECT-TF-Rushi's S25 ultra" wrapped to make
+                                // room for them, which is the wrong way round: the name is what
+                                // somebody is looking for, and the actions are what they do next.
+                                supportingContent = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        PasswordLine(
+                                            password = network.password,
+                                            security = network.security,
+                                            revealed = isRevealed,
+                                            connected = isConnected,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
                                         // Nothing to show and nothing to copy on a network with
                                         // no key, so neither control is offered on one.
                                         if (network.password.isNotEmpty()) {
@@ -714,8 +722,15 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
  * and whether it is the one in use.
  */
 @Composable
-private fun PasswordLine(password: String, security: String, revealed: Boolean, connected: Boolean) {
+private fun PasswordLine(
+    password: String,
+    security: String,
+    revealed: Boolean,
+    connected: Boolean,
+    modifier: Modifier = Modifier
+) {
     Row(
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
