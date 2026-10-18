@@ -83,6 +83,7 @@ import moe.shizuku.manager.ui.component.AppFilterChip
 import moe.shizuku.manager.ui.component.AppIcon
 import moe.shizuku.manager.ui.component.packageLine
 import moe.shizuku.manager.ui.component.rowKey
+import moe.shizuku.manager.ui.component.AppRowLine
 import moe.shizuku.manager.ui.component.AppStatusChips
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.ChipEmphasis
@@ -554,20 +555,14 @@ fun AppsScreen(
                                 .getOrDefault(pi.packageName)
                         )
                     },
-                    // The package name is the whole line and ellipsises, because the chip and
-                    // the switch now share the row's right side.
+                    // The name has the whole first line now, so a long one no longer wraps to
+                    // make room for the chip and the switch: they moved to the line under it,
+                    // with the package name giving way instead.
                     supportingContent = {
-                        Text(pi.packageLine(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                    trailingContent = {
-                        // One Row, so the chip and the control sit beside each other rather than
-                        // on top of one another: the slot places what it is given as a single
-                        // child.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppRowLine(pi.packageLine()) {
                             // The same chips every app list carries, worked out in one place:
                             // what kind of app it is, and what is worth knowing about it.
                             AppStatusChips(pi, hidden = pi.packageName in launcherless)
-                            Spacer(modifier = Modifier.width(8.dp))
                             if (selectionMode) {
                                 Checkbox(checked = isSelected, onCheckedChange = null)
                             } else {

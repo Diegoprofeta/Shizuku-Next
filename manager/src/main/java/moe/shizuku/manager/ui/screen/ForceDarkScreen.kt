@@ -55,6 +55,7 @@ import moe.shizuku.manager.manage.InstalledPackages
 import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.ui.component.AppFilterChip
 import moe.shizuku.manager.ui.component.AppIcon
+import moe.shizuku.manager.ui.component.AppRowLine
 import moe.shizuku.manager.ui.component.AppStatusChips
 import moe.shizuku.manager.ui.component.rowKey
 import moe.shizuku.manager.ui.component.CenteredMessage
@@ -325,22 +326,14 @@ fun ForceDarkScreen(bottomPadding: Dp, onBack: () -> Unit) {
                             leadingContent = { AppIcon(pi) },
                             headlineContent = { Text(appLabel(pm, pi)) },
                             supportingContent = {
-                                Text(
+                                AppRowLine(
                                     // The line under the name answers the one question the switch
                                     // raises the moment it moves: whether anything happened.
                                     text = if (justToggled == pi.packageName) {
                                         stringResource(R.string.force_dark_toggled)
                                     } else {
                                         pi.packageName
-                                    },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            trailingContent = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    }
                                 ) {
                                     AppStatusChips(pi, hidden = false)
                                     ExpressiveSwitch(

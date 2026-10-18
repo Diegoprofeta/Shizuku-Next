@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -386,12 +387,12 @@ fun appStatusChips(
 }
 
 /**
- * The chips of [appStatusChips], laid out for a row's trailing slot.
+ * The chips of [appStatusChips], on one line, for the line under an app's name.
  *
- * Stacked, not side by side. Two chips in a row take the width the name needs, and a name
- * squeezed into what is left wraps one letter per line - which is what "3 Button Navigation
- * Bar" did next to System and No launcher icon. A taller row is the better trade, and one chip
- * is a column of one.
+ * Side by side. They used to be stacked in a row's trailing slot, where two of them took the width
+ * the name needed; they share the line under the name now, and the package name is what gives way.
+ * Sized to their own words rather than one width for the group, because there is no column of them
+ * down the list left to line up - and a stack of them here is what made every row three chips tall.
  */
 @Composable
 fun AppStatusChips(
@@ -402,51 +403,49 @@ fun AppStatusChips(
 ) {
     val chips = appStatusChips(pi, hidden, removed)
 
-    // One width for the whole group, so the column of chips lines up down the list rather than
-    // each chip being as wide as its own word.
-    val chipWidth = statusChipMinWidth(AppStatusLabels)
-
-    // Three slots, always: an empty one, the kind chip, and then the status chip or another empty
-    // one. That is what puts the kind chip on the row's centre line - the block is centred as a
-    // whole, so a two-slot block would leave its kind chip half a chip high and a one-slot block
-    // half a chip low, and the chips would not line up from one row to the next. With three, the
-    // kind chip is always in the middle slot, whatever hangs under it.
-    //
-    // The cost is height: three slots are taller than a name and a package, so a row grows to
-    // fit. That is the trade for the chips being in line down the whole list.
-    Column(
+    Row(
         modifier = modifier,
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(ChipGap)
+        horizontalArrangement = Arrangement.spacedBy(ChipGap),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        EmptyChip(chipWidth)
         chips.forEach { (label, emphasis) ->
-            StatusChip(stringResource(label), emphasis = emphasis, minWidth = chipWidth)
+            StatusChip(stringResource(label), emphasis = emphasis)
         }
-        if (chips.size < 2) EmptyChip(chipWidth)
     }
 }
 
-/** The gap between two chips in a row's trailing stack. */
+/** The gap between two chips on the line under an app's name. */
 private val ChipGap = 4.dp
 
 /**
- * The space a chip would take, with nothing in it.
+ * The line under an app's name: the package it is, the chips that say what kind of app it is, and
+ * whatever the list does with the row.
  *
- * Given the group's width rather than the nothing it holds, so the invisible slot lines up with
- * the visible ones - it is what keeps the kind chip on the row's centre line from one row to the
- * next, and a slot narrower than its neighbours would do the opposite.
+ * The name used to share its line with those, and a long one wrapped onto a second line to make
+ * room for them - "Root My Galaxy Next" beside a chip and a switch did exactly that. The name is
+ * what somebody is looking for, so the whole first line is its own now, and this is what moved
+ * down: the package, the chips and the control on one line, the package giving way with an
+ * ellipsis.
  */
 @Composable
-private fun EmptyChip(minWidth: Dp) {
-    StatusChip(
-        text = "",
-        emphasis = ChipEmphasis.NONE,
-        minWidth = minWidth,
-        modifier = Modifier
-            .alpha(0f)
-            .clearAndSetSemantics { }
-    )
+fun AppRowLine(
+    text: String,
+    modifier: Modifier = Modifier,
+    actions: @Composable () -> Unit
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        actions()
+    }
 }
 
 /** Centred content for the states that aren't a list. */

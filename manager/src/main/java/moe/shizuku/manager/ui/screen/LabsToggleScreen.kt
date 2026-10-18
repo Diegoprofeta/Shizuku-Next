@@ -81,6 +81,7 @@ import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.ui.component.AppFilterChip
 import moe.shizuku.manager.ui.component.AppIcon
 import moe.shizuku.manager.ui.component.rowKey
+import moe.shizuku.manager.ui.component.AppRowLine
 import moe.shizuku.manager.ui.component.AppStatusChips
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.ChoiceRow
@@ -689,17 +690,7 @@ fun LabsToggleScreen(
                             leadingContent = { AppIcon(pi) },
                             headlineContent = { Text(appLabel(pm, pi)) },
                             supportingContent = {
-                                Text(
-                                    pi.packageName,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            trailingContent = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
+                                AppRowLine(pi.packageName) {
                                     // Hiding an app while it is starting is the only way that works
                                     // for a check made during startup, so the list can open an app
                                     // the way the watch cannot: hide first, then launch. Offered only

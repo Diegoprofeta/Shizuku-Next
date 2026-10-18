@@ -67,6 +67,7 @@ import moe.shizuku.manager.ui.component.appLabel
 import moe.shizuku.manager.ui.component.packageLine
 import moe.shizuku.manager.ui.component.rowKey
 import moe.shizuku.manager.ui.component.AppIcon
+import moe.shizuku.manager.ui.component.AppRowLine
 import moe.shizuku.manager.ui.component.AppStatusChips
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.ChipEmphasis
@@ -362,16 +363,10 @@ fun ManageScreen(
                                 if (removed) Box(modifier = Modifier.padding(20.dp)) else AppIcon(pi)
                             },
                             headlineContent = { Text(appLabel(pm, pi)) },
-                            // The package name is the whole line, and it ellipsises rather than
-                            // being cut, because nothing follows it any more.
+                            // The name has the whole first line now; the package, the chips and
+                            // the arrow share the line under it, and the package gives way.
                             supportingContent = {
-                                Text(pi.packageLine(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            },
-                            trailingContent = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
+                                AppRowLine(pi.packageLine()) {
                                     // The same chips every app list carries, worked out in one
                                     // place: what kind of app it is, and what is worth
                                     // knowing about it.
