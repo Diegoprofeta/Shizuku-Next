@@ -2,6 +2,7 @@ package moe.shizuku.manager.ui.screen
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.ui.component.PillButton
 import moe.shizuku.manager.ui.component.PillButtonQuiet
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.R
 import moe.shizuku.manager.shell.LibraryCommand
 import moe.shizuku.manager.shell.ShellCommands
@@ -77,10 +80,13 @@ internal fun LibrarySheet(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
                 )
             } else {
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 460.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    val listState = rememberLazyListState()
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.heightIn(max = 460.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
                     items(matches, key = { it.command }) { entry ->
                         ListItem(
                             modifier = Modifier.clickable { onPick(entry) },
@@ -97,6 +103,13 @@ internal fun LibrarySheet(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }
+                    }
+
+                    ScrollToTopButton(
+                        listState = listState,
+                        bottomPadding = 16.dp,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    )
                 }
             }
         }

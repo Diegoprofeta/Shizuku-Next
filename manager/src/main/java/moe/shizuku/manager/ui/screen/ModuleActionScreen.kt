@@ -1,5 +1,6 @@
 package moe.shizuku.manager.ui.screen
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -39,6 +41,7 @@ import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.ModuleCommandRequest
 import moe.shizuku.manager.module.ModuleSettings
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 
 /**
  * A module's action, on its own screen.
@@ -108,6 +111,7 @@ fun ModuleActionScreen(module: AdbModule, onBack: () -> Unit) {
         snapshotFlow { consoleScroll.maxValue }.collect { consoleScroll.scrollTo(it) }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text(module.name) },
@@ -170,6 +174,13 @@ fun ModuleActionScreen(module: AdbModule, onBack: () -> Unit) {
                     .padding(14.dp)
             )
         }
+        }
+
+        ScrollToTopButton(
+            scrollState = consoleScroll,
+            bottomPadding = 16.dp,
+            modifier = Modifier.align(Alignment.BottomEnd)
+        )
     }
 
     pendingCommand?.let { request ->

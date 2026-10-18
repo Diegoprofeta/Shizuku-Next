@@ -2,6 +2,7 @@ package moe.shizuku.manager.ui.screen
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.ui.component.PillButtonQuiet
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.R
 import moe.shizuku.manager.shell.ShellHistory
 
@@ -78,10 +81,13 @@ fun ShellHistorySheet(
             return@ModalBottomSheet
         }
 
-        LazyColumn(
-            modifier = Modifier.heightIn(max = 460.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.heightIn(max = 460.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
             items(entries, key = { it.command }) { entry ->
                 Row(
                     modifier = Modifier
@@ -121,6 +127,13 @@ fun ShellHistorySheet(
                     }
                 }
             }
+            }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = 16.dp,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 }
