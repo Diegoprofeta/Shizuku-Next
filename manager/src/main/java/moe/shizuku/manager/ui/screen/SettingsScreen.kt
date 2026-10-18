@@ -244,9 +244,9 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
     }
 
     // Root can be gone since the method was chosen (an OTA, root switched off in the
-    // manager), and a stored Root would then never start anything. The resolver rewrites
-    // the setting; Root is also left out of the list below, so it can't be picked again.
-    // Both probes spawn a shell, hence off the main thread.
+    // manager), and the resolver then uses Wireless debugging for this start while keeping
+    // Root as the choice: root coming back restores it. Root is left out of the list below
+    // only while it cannot run. Both probes spawn a shell, hence off the main thread.
     var rootAvailable by remember { mutableStateOf(false) }
     var rootMethodDropped by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {

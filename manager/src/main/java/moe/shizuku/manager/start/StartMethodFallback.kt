@@ -14,17 +14,18 @@ import moe.shizuku.manager.utils.EnvironmentUtils
  * watchdog, the Start button), find nothing to escalate with, and quietly do nothing: the
  * app looks configured but never starts.
  *
- * So a stored Root is rewritten to Wireless debugging as soon as the device is seen
- * without root, and [droppedRoot] says so, so the settings screen can explain the change
- * instead of making it behind the user's back. Only Root can go missing: wireless, USB
- * and system don't depend on the device being rooted.
+ * So a stored Root falls back to Wireless debugging while the device has no root, and
+ * [droppedRoot] says so, so the settings screen can explain the fallback. The setting itself is
+ * left alone: root can come back - root switched back on, a reflash, an OTA reverted - and the
+ * next start after that has to use it again without the user having to re-pick Root.
+ *
+ * Only Root can go missing: wireless, USB and system don't depend on the device being rooted.
  */
 object StartMethodGuard {
 
     /**
-     * Whether this process dropped a stored Root method because the device has no root.
-     * In memory only the point is to explain a change to whoever looks next, and the
-     * screen that made the change may not be the one that shows it.
+     * Whether the last resolution fell back from Root because the device has no root.
+     * In memory only the point is to explain the fallback on the screen that shows it.
      */
     @Volatile
     var droppedRoot: Boolean = false
@@ -32,7 +33,7 @@ object StartMethodGuard {
 
     /**
      * The method to use: [configured] unless it is Root and this device can't run it, in
-     * which case the setting is rewritten to Wireless debugging and that is returned.
+     * which case Wireless debugging is used for this start and [configured] is kept as it is.
      *
      * Call off the main thread: probing root spawns a shell.
      */
@@ -40,14 +41,21 @@ object StartMethodGuard {
     fun resolve(
         @ShizukuSettings.StartMethod configured: Int = ShizukuSettings.getStartMethod()
     ): Int {
-        if (configured != ShizukuSettings.StartMethod.ROOT) return configured
-        if (isAvailable(configured)) return configured
+        if (configured != ShizukuSettings.StartMethod.ROOT) {
+            droppedRoot = false
+            return configured
+        }
+        if (isAvailable(configured)) {
+            // Root is back, or never left: the choice is Root again without anything having to
+            // restore it, because it was never overwritten.
+            droppedRoot = false
+            return configured
+        }
 
         Log.w(
             AppConstants.TAG,
-            "Root is not available on this device; falling back to Wireless debugging"
+            "Root is not available on this device; using Wireless debugging for this start"
         )
-        ShizukuSettings.setStartMethod(ShizukuSettings.StartMethod.WIRELESS)
         droppedRoot = true
         return ShizukuSettings.StartMethod.WIRELESS
     }

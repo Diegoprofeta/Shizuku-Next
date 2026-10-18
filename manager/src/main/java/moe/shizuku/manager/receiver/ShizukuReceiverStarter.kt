@@ -101,8 +101,8 @@ object ShizukuReceiverStarter {
         // Root can be gone since the method was chosen (an OTA, root switched off), and a
         // root start with nothing to escalate with does nothing at all so a start that
         // asks for root on a device without it falls back to wireless debugging instead of
-        // failing silently. The setting is rewritten too, so the UI agrees with what the
-        // next start will do.
+        // failing silently. The setting stays Root, so root coming back restores the method
+        // on the next start without the user having to pick it again.
         val method = StartMethodGuard.resolve(startMethod)
 
         StartStatusReporter.starting()
