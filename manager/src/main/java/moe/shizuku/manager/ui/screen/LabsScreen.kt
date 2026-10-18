@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -39,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,12 +55,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.R
+import moe.shizuku.manager.manage.BlockedGates
 import moe.shizuku.manager.manage.ForceDark
 import moe.shizuku.manager.manage.Hiding
 import moe.shizuku.manager.manage.PackageTools
+import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.ui.Detail
+import moe.shizuku.manager.ui.component.ExpressiveSwitch
 import moe.shizuku.manager.ui.component.FeaturePlateIcon
 import moe.shizuku.manager.ui.component.SegmentedCard
 import moe.shizuku.manager.ui.component.SegmentedListItem
@@ -73,6 +81,30 @@ private val ActiveDotSize = 10.dp
  * device. The home screen's Restart button is a fixed blue for the same reason.
  */
 private val ActiveGreen = Color(0xFF34C759)
+
+/** The gates the Labs list can flip from a row instead of making somebody open the screen. */
+private enum class LabGate { FIREWALL, AUTOSTART, FORCE_DARK }
+
+/** Whether a gate is on, asked of the same source its own screen asks. */
+private fun gateOn(gate: LabGate): Boolean = when (gate) {
+    LabGate.FIREWALL -> BlockedGates.isEnabled(AppToggleFeature.FIREWALL.name)
+    LabGate.AUTOSTART -> BlockedGates.isEnabled(AppToggleFeature.AUTOSTART.name)
+    LabGate.FORCE_DARK -> ForceDark.isEnabled()
+}
+
+/** What a row's switch does, through the same paths the feature's own screen uses. */
+private suspend fun setLabGate(context: Context, gate: LabGate, checked: Boolean) {
+    when (gate) {
+        LabGate.FIREWALL -> setAppToggleGate(context, AppToggleFeature.FIREWALL, checked)
+        LabGate.AUTOSTART -> setAppToggleGate(context, AppToggleFeature.AUTOSTART, checked)
+        LabGate.FORCE_DARK -> {
+            ForceDark.setEnabled(checked)
+            // Off has to put the switches back whether or not this app is the one holding them.
+            if (!checked) ForceDark.restoreAlways()
+            HidingWatchService.refresh(context)
+        }
+    }
+}
 
 /**
  * The things that are gone to rather than lived in.
@@ -102,9 +134,25 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
     // is about to be looked at.
     var refresh by remember { mutableIntStateOf(0) }
     var active by remember { mutableStateOf<Set<Detail>>(emptySet()) }
+    var gates by remember { mutableStateOf<Map<LabGate, Boolean>>(emptyMap()) }
+    val scope = rememberCoroutineScope()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
     LaunchedEffect(refresh) {
         active = withContext(Dispatchers.IO) { activeFeatures(context) }
+        gates = withContext(Dispatchers.IO) {
+            LabGate.entries.associateWith { gate -> gateOn(gate) }
+        }
+    }
+
+    // A gate flipped from the row, without opening the screen it belongs to. The screen's own
+    // header asks the same question of the same setting; setLabGate is the one place that knows
+    // how.
+    fun setGate(gate: LabGate, checked: Boolean) {
+        gates = gates + (gate to checked)
+        scope.launch {
+            withContext(Dispatchers.IO) { setLabGate(context, gate, checked) }
+            refresh++
+        }
     }
     // Every feature there is, in no particular order. The order is worked out below.
     val entries = listOf(
@@ -113,19 +161,26 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
         LabEntry(
             AppToggleFeature.FIREWALL.titleRes,
             AppToggleFeature.FIREWALL.icon,
-            Detail.FIREWALL
+            Detail.FIREWALL,
+            LabGate.FIREWALL
         ),
         LabEntry(
             AppToggleFeature.AUTOSTART.titleRes,
             AppToggleFeature.AUTOSTART.icon,
-            Detail.AUTOSTART
+            Detail.AUTOSTART,
+            LabGate.AUTOSTART
         ),
         // The six hiding modes are one row rather than six: they are the same list with a
         // different setting behind it, and six rows of the same shape was most of the list.
         LabEntry(R.string.tab_hiding, Icons.Outlined.VisibilityOff, Detail.HIDING),
         LabEntry(R.string.tab_log, Icons.AutoMirrored.Outlined.ReceiptLong, Detail.LOG),
         LabEntry(R.string.tab_device_info, Icons.Outlined.PhoneAndroid, Detail.DEVICE_INFO),
-        LabEntry(R.string.tab_force_dark, Icons.Outlined.DarkMode, Detail.FORCE_DARK),
+        LabEntry(
+            R.string.tab_force_dark,
+            Icons.Outlined.DarkMode,
+            Detail.FORCE_DARK,
+            LabGate.FORCE_DARK
+        ),
         LabEntry(R.string.tab_activities, Icons.Outlined.Widgets, Detail.ACTIVITIES),
         LabEntry(R.string.tab_wifi_passwords, Icons.Outlined.Wifi, Detail.WIFI_PASSWORDS),
         LabEntry(R.string.tab_files, Icons.Outlined.FolderOpen, Detail.FILES),
@@ -192,10 +247,23 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
                         },
                         headlineContent = { Text(label) },
                         trailingContent = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // The gate, on the row: the switches on the hiding list are the
+                                // thing people like, and this is the same idea for the features
+                                // that have one - on or off without opening the screen to find
+                                // its switch.
+                                entry.gate?.let { gate ->
+                                    ExpressiveSwitch(
+                                        checked = gates[gate] == true,
+                                        onCheckedChange = { setGate(gate, it) }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null
+                                )
+                            }
                         },
                         onClick = { onOpenDetail(entry.detail) }
                     )
@@ -254,9 +322,13 @@ private fun activeFeatures(context: Context): Set<Detail> = buildSet {
     if (ForceDark.hasWorkToDo()) add(Detail.FORCE_DARK)
 }
 
-/** One row of the list: what it is called, what is on it, and where it goes. */
+/**
+ * One row of the list: what it is called, what is on it, where it goes, and the gate its screen
+ * keeps if it has one.
+ */
 private data class LabEntry(
     @StringRes val labelRes: Int,
     val icon: ImageVector,
-    val detail: Detail
+    val detail: Detail,
+    val gate: LabGate? = null
 )
