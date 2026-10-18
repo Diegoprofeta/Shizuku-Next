@@ -285,6 +285,19 @@ fun StealthScreen(onBack: () -> Unit) {
                 }
             }
 
+            // The stub is the part of this screen nobody expects: Unhide does not put the app
+            // back, it puts a forwarding name back. Said here, next to the button, because the
+            // label alone cannot carry that.
+            if (action != Action.HIDE) {
+                item {
+                    Text(
+                        text = stringResource(R.string.stealth_stub_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             item {
                 Button(
                     onClick = {

@@ -601,7 +601,8 @@
     <string name="stealth_uninstall_message">The system will now prompt you to uninstall Shizuku. Then, install the clone.</string>
     <string name="stealth_uninstall">Uninstall</string>
     <string name="stealth_hide">Hide</string>
-    <string name="stealth_unhide">Unhide</string>
+    <string name="stealth_unhide">Unhide with stub</string>
+    <string name="stealth_stub_note">Unhide creates a small stub at Shizuku's original package name so apps looking for it can still work. The stub forwards requests to the hidden Shizuku app. It is not a second copy. Hide removes the stub.</string>
 
     <!-- Settings -->
     <string name="settings_start_on_boot">Start on boot</string>
