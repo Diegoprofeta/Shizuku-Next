@@ -4,20 +4,16 @@ import android.app.Dialog
 import android.app.NotificationManager
 import android.content.Context
 import android.content.DialogInterface
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.shizuku.manager.R
 import moe.shizuku.manager.databinding.BugReportDialogBinding
 import moe.shizuku.manager.ktx.asLink
 import moe.shizuku.manager.ktx.applyTemplateArgs
-import moe.shizuku.manager.ui.screen.readDiagnostics
 import moe.shizuku.manager.utils.CustomTabsHelper
 import moe.shizuku.manager.utils.shareAppLog
 import moe.shizuku.manager.worker.AdbStartWorker
@@ -25,21 +21,6 @@ import moe.shizuku.manager.worker.AdbStartWorker
 class BugReportDialog : DialogFragment() {
 
     private lateinit var binding: BugReportDialogBinding
-
-    /**
-     * The same block the home screen's Copy button produces, read once while the dialog is open
-     * and put at the top of the body.
-     *
-     * A report that arrives without it costs three questions before it can be acted on - which
-     * Android, which build, is the service even up - and the person filing it is the one least
-     * able to answer them, because the app is the only thing that knows. Read here rather than
-     * handed in: this dialog is reached from Settings, which keeps none of that state.
-     *
-     * Empty only in the moment between the dialog appearing and the read finishing, where the
-     * body falls back to the plain text rather than blocking the button on a binder call.
-     */
-    @Volatile
-    private var diagnostics: String = ""
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
@@ -64,44 +45,22 @@ class BugReportDialog : DialogFragment() {
             shareLog.setOnClickListener { shareLog() }
         }
 
-        lifecycleScope.launch {
-            diagnostics = withContext(Dispatchers.IO) { readDiagnostics(context) }
-        }
-
         return MaterialAlertDialogBuilder(context)
             .setTitle(R.string.settings_report_bug)
             .setView(binding.root)
+            // The chooser, not the blank composer: the repository's own templates ask for the
+            // things a report needs, in the order they are needed, and a form is easier to fill
+            // than an empty box. What the app used to do - put a block of machine text and a
+            // sentence at the top of a new issue - only produced reports that read like a
+            // template and still said nothing about what went wrong, so nothing is pre-filled
+            // any more, not even a title.
             .setPositiveButton("GitHub") { _, _ ->
-                val url = "https://github.com/rushiranpise/Shizuku-Next/issues/new" +
-                    "?body=" + Uri.encode(reportBody(context))
-                CustomTabsHelper.launchUrlOrCopy(context, url)
+                CustomTabsHelper.launchUrlOrCopy(context, ISSUES_NEW)
             }
             .setNeutralButton(android.R.string.cancel) { dialog, _ ->
                 dialog.cancel()
             }
             .create()
-    }
-
-    /**
-     * What the issue starts with: the diagnostics block, then the prompt to describe the bug.
-     *
-     * The block goes first because it is the part that is already known, and it is left out rather
-     * than blocked on while the read finishes, so a body is never held up by a binder call.
-     *
-     * The log used to follow, as a tail, and does not any more. A body travels to GitHub in a URL,
-     * so what could go in one was a hundred lines of a day and no more - the kind of half-answer
-     * that comes back asking for the rest, from the person least able to give it. The whole file
-     * leaves the app from the button under this text now, and there is one place to look for it
-     * rather than two that can disagree.
-     */
-    private fun reportBody(context: Context): String = buildString {
-        if (diagnostics.isNotEmpty()) {
-            appendLine(diagnostics)
-            appendLine()
-            appendLine("---")
-            appendLine()
-        }
-        append(context.getString(R.string.bug_report_dialog_body_prompt))
     }
 
     /**
@@ -132,4 +91,8 @@ class BugReportDialog : DialogFragment() {
         if (activity is BugReportDialogActivity) activity?.finish()
     }
 
+    private companion object {
+        /** The repository's issue templates, which is where a report should start. */
+        const val ISSUES_NEW = "https://github.com/rushiranpise/Shizuku-Next/issues/new/choose"
+    }
 }

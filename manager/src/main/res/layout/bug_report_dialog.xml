@@ -56,11 +56,12 @@
             style="@style/TextAppearance.Material3.BodySmall"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/bug_report_dialog_diagnostics_note" />
+            android:text="@string/bug_report_dialog_log_note" />
 
-        <!-- The issue body carries a tail of the log because a body is a URL. This is the rest
-             of it, handed to wherever the reporter wants it: the browser's file picker, a mail
-             to themselves, anything that can hold a file. -->
+        <!-- Nothing goes into the issue by itself. The log is here, on the other hand, so a
+             report that needs one can attach the whole file rather than a tail of it: handed to
+             wherever the reporter wants it - the browser's file picker, a mail to themselves,
+             anything that can hold a file. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/shareLog"
             style="@style/Widget.Material3.Button.TextButton"

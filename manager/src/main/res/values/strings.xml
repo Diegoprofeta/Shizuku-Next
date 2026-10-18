@@ -733,8 +733,7 @@
     <string name="bug_report_dialog_issues">Search through all ^1 to see if your bug has already been reported.</string>
     <string name="bug_report_dialog_link_issues">existing issues</string>
     <string name="bug_report_dialog_method">Please submit an issue on ^1.</string>
-    <string name="bug_report_dialog_diagnostics_note">Your current diagnostics are filled in at the top of the issue. Share the whole log below and attach it.</string>
-    <string name="bug_report_dialog_body_prompt">Please describe the bug. Include steps to reproduce if possible, as well as any relevant images/logs.</string>
+    <string name="bug_report_dialog_log_note">If the issue needs a log, share the whole one below and attach it.</string>
     <string name="bug_report_dialog_share_log">Share the log</string>
 
     <!-- Snackbar -->

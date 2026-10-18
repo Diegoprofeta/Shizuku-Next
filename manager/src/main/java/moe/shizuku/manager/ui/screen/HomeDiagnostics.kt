@@ -31,10 +31,7 @@ import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.BuildConfig
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
-import moe.shizuku.manager.manage.Hiding
-import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.start.PhantomProcessKiller
-import moe.shizuku.manager.start.StartMethodGuard
 import moe.shizuku.manager.start.hasPermission
 import moe.shizuku.manager.start.hasWriteSecureSettings
 import moe.shizuku.manager.start.isWirelessDebuggingEnabled
@@ -43,8 +40,6 @@ import moe.shizuku.manager.start.runningStartMethodLabelRes
 import moe.shizuku.manager.start.startMethodLabelRes
 import moe.shizuku.manager.ui.theme.LocalAmoledTheme
 import moe.shizuku.manager.utils.EnvironmentUtils
-import moe.shizuku.manager.utils.SettingsHelper
-import moe.shizuku.manager.utils.ShizukuStateMachine
 import rikka.shizuku.Shizuku
 
 /**
@@ -65,28 +60,6 @@ import rikka.shizuku.Shizuku
  * two are not the same question: that state drives the cards, and this is a snapshot of what
  * the app can see right now, taken where it is cheap to take it, off the main thread.
  */
-/**
- * The same block, read from live state rather than from a caller's snapshot.
- *
- * The home screen keeps what it shows and hands the values in, so the card cannot describe a
- * service that was there when the screen appeared and not now. Everywhere else - the report
- * dialog is opened from Settings, which keeps none of this - there is nobody to hand them in,
- * so they are asked for here. Must be called off the main thread: probing root spawns a shell
- * and the binder calls block.
- */
-internal fun readDiagnostics(context: Context): String {
-    val running = ShizukuStateMachine.isRunning()
-    return buildDiagnostics(
-        context = context,
-        running = running,
-        uid = if (running) runCatching { Shizuku.getUid() }.getOrDefault(-1) else -1,
-        method = StartMethodGuard.resolve(),
-        hidingActive = HidingWatchService.isRunning() && Hiding.isActive(),
-        batteryIgnored = SettingsHelper.isIgnoringBatteryOptimizations(context),
-        rooted = runCatching { EnvironmentUtils.isRooted() }.getOrDefault(false)
-    )
-}
-
 internal fun buildDiagnostics(
     context: Context,
     running: Boolean,
