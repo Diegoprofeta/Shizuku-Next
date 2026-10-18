@@ -709,7 +709,10 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
     )
 }
 
-/** The key and what kind of key it is, on one line under the name of the network. */
+/**
+ * The key under the name of the network, and, while the key is masked, what kind of network it is
+ * and whether it is the one in use.
+ */
 @Composable
 private fun PasswordLine(password: String, security: String, revealed: Boolean, connected: Boolean) {
     Row(
@@ -735,20 +738,26 @@ private fun PasswordLine(password: String, security: String, revealed: Boolean, 
             modifier = Modifier.weight(1f, fill = false)
         )
 
-        Text(
-            text = security,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // Said on the row rather than by a banner above the list: the state belongs to this
-        // network, and forgetting it is the one action here that costs a connection.
-        if (connected) {
+        // Not beside a key that is showing. Both labels together take most of the line, which
+        // left a revealed key wrapping every few characters - "Aloo / 1141 / 3!" - instead of
+        // reading as the one value it is. Masked, they stay: the kind of network and whether it
+        // is the one in use are the useful part of a row of dots.
+        if (!revealed) {
             Text(
-                text = stringResource(R.string.wifi_passwords_connected),
+                text = security,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Said on the row rather than by a banner above the list: the state belongs to this
+            // network, and forgetting it is the one action here that costs a connection.
+            if (connected) {
+                Text(
+                    text = stringResource(R.string.wifi_passwords_connected),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
