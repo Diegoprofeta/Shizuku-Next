@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -84,6 +85,7 @@ import moe.shizuku.manager.ui.component.AppIcon
 import moe.shizuku.manager.ui.component.rowKey
 import moe.shizuku.manager.ui.component.AppRowLine
 import moe.shizuku.manager.ui.component.AppStatusChips
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.ChoiceRow
 import moe.shizuku.manager.ui.component.ExpressiveSwitch
@@ -621,7 +623,9 @@ fun LabsToggleScreen(
         )
 
         Box(modifier = Modifier.fillMaxSize().alpha(contentAlpha)) {
+            val listState = rememberLazyListState()
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 16.dp,
@@ -753,6 +757,12 @@ fun LabsToggleScreen(
                     }
                 }
             }
+
+            ScrollToTopButton(
+                listState = listState,
+                bottomPadding = bottomPadding,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
         }
     }
 }

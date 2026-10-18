@@ -251,6 +251,7 @@
 
     <string name="tab_device_info">Device info</string>
     <string name="device_refresh">Refresh</string>
+    <string name="scroll_to_top">Scroll to top</string>
     <string name="device_battery">Battery</string>
     <string name="device_status">Status</string>
     <string name="device_temperature">Temperature</string>

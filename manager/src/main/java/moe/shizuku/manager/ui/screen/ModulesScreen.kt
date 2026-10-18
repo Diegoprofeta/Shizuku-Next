@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -66,6 +67,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.RefreshBox
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.TelevisionRefreshButton
 import moe.shizuku.manager.ui.component.televisionEnterOnRight
 import moe.shizuku.manager.ui.component.televisionFocusShape
@@ -310,6 +312,8 @@ fun ModulesScreen(
         }
     }
 
+    val listState = rememberLazyListState()
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             TopAppBar(
@@ -428,6 +432,7 @@ fun ModulesScreen(
                 onRefresh = refresh
             ) {
             LazyColumn(
+                state = listState,
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     top = 16.dp,
@@ -554,6 +559,15 @@ fun ModulesScreen(
                 contentDescription = stringResource(R.string.modules_install)
             )
         }
+
+        // Above the install button: the two sit in the same corner, and a scroll button that
+        // covered it would be the one thing this list already has plenty of.
+        ScrollToTopButton(
+            listState = listState,
+            bottomPadding = bottomPadding,
+            modifier = Modifier.align(Alignment.BottomEnd),
+            extraBottom = 72.dp
+        )
     }
 
     if (installDialog) {

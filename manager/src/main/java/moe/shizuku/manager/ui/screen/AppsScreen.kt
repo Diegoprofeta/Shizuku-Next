@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -85,6 +86,7 @@ import moe.shizuku.manager.ui.component.packageLine
 import moe.shizuku.manager.ui.component.rowKey
 import moe.shizuku.manager.ui.component.AppRowLine
 import moe.shizuku.manager.ui.component.AppStatusChips
+import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.ui.component.CenteredMessage
 import moe.shizuku.manager.ui.component.ChipEmphasis
 import moe.shizuku.manager.ui.component.SegmentedCard
@@ -339,6 +341,8 @@ fun AppsScreen(
         refreshKey++
     }
 
+    val listState = rememberLazyListState()
+
     Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectionMode) {
@@ -506,6 +510,7 @@ fun AppsScreen(
             modifier = Modifier.fillMaxSize()
         ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             // Every app is its own card, so they need room between them; the padding
             // keeps the cards off the edges like the cards on the other tabs.
@@ -648,6 +653,12 @@ fun AppsScreen(
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding + 16.dp)
+    )
+
+    ScrollToTopButton(
+        listState = listState,
+        bottomPadding = bottomPadding,
+        modifier = Modifier.align(Alignment.BottomEnd)
     )
     }
 
