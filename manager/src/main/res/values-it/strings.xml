@@ -228,6 +228,7 @@
     <string name="intent_flag_grant_write">Autorizza scrittura</string>
     <string name="tab_device_info">Informazioni dispositivo</string>
     <string name="device_refresh">Aggiorna</string>
+    <string name="scroll_to_top">Scorri in alto</string>
     <string name="device_battery">Batteria</string>
     <string name="device_status">Stato</string>
     <string name="device_temperature">Temperatura</string>
@@ -569,7 +570,8 @@
     <string name="stealth_uninstall_message">Il sistema ti chiederà di disinstallare Shizuku. Poi, installa il clone.</string>
     <string name="stealth_uninstall">Disinstalla</string>
     <string name="stealth_hide">Nascondi</string>
-    <string name="stealth_unhide">Mostra</string>
+    <string name="stealth_unhide">Mostra con stub</string>
+    <string name="stealth_stub_note">Mostra crea un piccolo stub con il nome di pacchetto originale di Shizuku, così le app che lo cercano possono continuare a funzionare. Lo stub inoltra le richieste all\'app Shizuku nascosta. Non è una seconda copia. Nascondi rimuove lo stub.</string>
     <!-- Settings -->
     <string name="settings_start_on_boot">Avvia all\'accensione</string>
     <string name="settings_use_system_color">Usa colore tema di sistema</string>
