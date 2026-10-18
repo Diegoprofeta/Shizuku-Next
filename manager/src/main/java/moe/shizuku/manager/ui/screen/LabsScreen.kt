@@ -3,33 +3,27 @@ package moe.shizuku.manager.ui.screen
 import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PhoneAndroid
-import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Wifi
@@ -37,7 +31,6 @@ import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -49,15 +42,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -69,37 +57,12 @@ import moe.shizuku.manager.manage.ForceDark
 import moe.shizuku.manager.manage.Hiding
 import moe.shizuku.manager.manage.PackageTools
 import moe.shizuku.manager.ui.Detail
+import moe.shizuku.manager.ui.component.FeaturePlateIcon
+import moe.shizuku.manager.ui.component.SegmentedCard
+import moe.shizuku.manager.ui.component.SegmentedListItem
 import moe.shizuku.manager.ui.televisionReturnFocus
-import moe.shizuku.manager.utils.MoreApps
-import moe.shizuku.manager.ui.theme.LocalAmoledTheme
-import moe.shizuku.manager.ui.theme.LocalTelevision
 
-/** Padding above, below and beside the tile's contents. */
-private val TilePadding = 10.dp
-
-/**
- * How much of the width the icon plate takes.
- *
- * A fraction rather than a size, because the plate was 40dp at every screen width and looked
- * small wherever the tile was wider than a phone's third of a screen. The plate and the icon
- * inside it scale with the tile, and so does the height below, which is what keeps a three-across
- * grid looking the same on a tablet as on a phone.
- */
-private val PlateFraction = 0.50f
-
-/**
- * How much of the plate the icon itself fills.
- *
- * Two thirds, which is what a launcher icon in a tinted plate is: the plate is the colour the eye
- * lands on and the glyph is what it reads, so a glyph at a bit over half the plate reads as a
- * small mark floating in a square rather than as an icon.
- */
-private val IconFraction = 0.66f
-
-/** The space between the plate and the name. */
-private val PlateGap = 8.dp
-
-/** The dot that says a tile is doing something. */
+/** The dot that says a feature named on a row is doing something. */
 private val ActiveDotSize = 10.dp
 
 /**
@@ -112,44 +75,26 @@ private val ActiveDotSize = 10.dp
 private val ActiveGreen = Color(0xFF34C759)
 
 /**
- * The lines of the name a tile reserves room for.
- *
- * Three, which is what the longest name in the list needs at three across once the phone's type is
- * set larger than the default. It was two, written down as 40dp - and 40dp is two lines of the
- * *default* type, so on a phone set to larger type that box held one line and the name was clipped
- * and ellipsized instead of continuing onto the next line. The room is measured from the type the
- * name is set in now, so the two cannot come apart again.
- *
- * Reserved, not imposed. The tile is always this much taller than its plate, so every tile in the
- * grid is the same height - but the label inside is only as tall as its own text and the whole
- * plate-and-name block is centred in what is left. A fixed box of this height was the first
- * attempt and it was wrong in a way that showed: a one-line name centred its text inside two
- * lines' worth of box, which pushed the block up and left the slack at the bottom of the tile.
- *
- * A name longer than that is still a name to shorten: it ellipsizes, which is visible, where
- * letting it run on would move the plate.
- */
-private const val LabelLines = 3
-
-/**
  * The things that are gone to rather than lived in.
  *
  * Every one of these was a tab of its own before, which is most of the bar's width spent on
  * screens that are largely empty when you land on them: you open the app-ops list to look one
  * app up, and you open the shell to run something and leave. A tab is for a place the app keeps
- * you in, so this is a grid of the others instead, and the next one to earn a place here costs a
+ * you in, so this is a list of the others instead, and the next one to earn a place here costs a
  * line rather than a fifth of the bar.
  *
- * A grid and a name, nothing more: these are features, not decisions, so each one is its icon
- * and what it is called. A name that needs a sentence under it to be understood is a name to
- * change, and the grid is what makes room for many of them.
+ * It used to be a grid of tiles. A grid has to be told how many columns it is, and a count that
+ * is not a multiple of that number leaves a partly empty last row - three columns and thirteen
+ * features did exactly that. A list has no such arithmetic: it takes any number of rows, a long
+ * name like "Hide wireless debugging" reads on one line, and it is the shape every other list in
+ * the app already has.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
     val context = LocalContext.current
 
-    // What each tile is doing, so the grid can be read without opening eight screens to find
+    // What each feature is doing, so the list can be read without opening eight screens to find
     // out. It is the only place every one of them is in sight at once, and a hiding mode that is
     // on with apps listed looks exactly like one that is off from here.
     //
@@ -161,7 +106,7 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
     LaunchedEffect(refresh) {
         active = withContext(Dispatchers.IO) { activeFeatures(context) }
     }
-    // Every tile there is, in no particular order. The order is worked out below.
+    // Every feature there is, in no particular order. The order is worked out below.
     val entries = listOf(
         LabEntry(R.string.tab_manage, Icons.Outlined.AdminPanelSettings, Detail.APP_OPS),
         LabEntry(R.string.tab_shell, Icons.Outlined.Terminal, Detail.SHELL),
@@ -175,10 +120,10 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
             AppToggleFeature.AUTOSTART.icon,
             Detail.AUTOSTART
         ),
-        // The six hiding modes are one tile rather than six: they are the same list with a
-        // different setting behind it, and six tiles of the same shape was most of the grid.
+        // The six hiding modes are one row rather than six: they are the same list with a
+        // different setting behind it, and six rows of the same shape was most of the list.
         LabEntry(R.string.tab_hiding, Icons.Outlined.VisibilityOff, Detail.HIDING),
-        LabEntry(R.string.tab_log, Icons.Outlined.ReceiptLong, Detail.LOG),
+        LabEntry(R.string.tab_log, Icons.AutoMirrored.Outlined.ReceiptLong, Detail.LOG),
         LabEntry(R.string.tab_device_info, Icons.Outlined.PhoneAndroid, Detail.DEVICE_INFO),
         LabEntry(R.string.tab_force_dark, Icons.Outlined.DarkMode, Detail.FORCE_DARK),
         LabEntry(R.string.tab_activities, Icons.Outlined.Widgets, Detail.ACTIVITIES),
@@ -188,12 +133,12 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
         LabEntry(R.string.lab_more_apps, Icons.Outlined.Extension, Detail.MORE_APPS)
     )
 
-    // By name, not by the order these features arrived in. The grid is a list, and a list is read
-    // by looking something up: the order they were built in put the six hiding lists after the two
-    // that need a running server, so finding one meant reading the whole grid. Sorted here rather
-    // than written out in order above, so a tile added later cannot land in the wrong place - it
-    // goes wherever its name goes.
-    val tiles = entries
+    // By name, not by the order these features arrived in. A list is read by looking something up:
+    // the order they were built in put the six hiding lists after the two that need a running
+    // server, so finding one meant reading the whole list. Sorted here rather than written out in
+    // order above, so a row added later cannot land in the wrong place - it goes wherever its name
+    // goes.
+    val rows = entries
         .map { entry -> entry to stringResource(entry.labelRes) }
         .sortedBy { (_, label) -> label.lowercase() }
 
@@ -203,43 +148,56 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
             windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
         )
 
-        LazyVerticalGrid(
-            // Three to a row, asked for rather than derived from a width: at two the grid spent
-            // a lot of screen on ten short names, and a count says what the layout is instead of
-            // leaving it to whatever a device's width happens to produce.
-            //
-            // The cost is real and is paid in the tiles: at three across a phone a tile is about
-            // 120dp, so a name like "Hide wireless debugging" has nowhere to sit on one line and
-            // has to stack. The tile below is built for that.
-            //
-            // Five on a TV. Every part of a tile is a fraction of its width, so three across a
-            // TV's wider page made tiles so large that two rows filled the screen and the rest of
-            // the grid was a long walk down with the remote.
-            columns = GridCells.Fixed(if (LocalTelevision.current) 5 else 3),
-            modifier = Modifier.fillMaxSize(),
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             contentPadding = PaddingValues(
                 start = 16.dp,
                 top = 16.dp,
                 end = 16.dp,
                 bottom = bottomPadding
             ),
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            tiles.forEach { (entry, label) ->
-                item(key = entry.detail.name) {
-                    LabTile(
-                        icon = entry.icon,
-                        label = label,
-                        active = entry.detail in active,
+            items(rows, key = { (entry, _) -> entry.detail.name }) { (entry, label) ->
+                SegmentedCard {
+                    SegmentedListItem(
+                        // The item that opened a detail takes the focus back when it closes, on a
+                        // TV; off one this is nothing.
                         modifier = Modifier.televisionReturnFocus(entry.detail),
-                        onClick = {
-                            // The index used to be somebody else's website and went to the
-                            // browser; it is a list now, with the search, the sort and the
-                            // filters that a list of over a thousand repositories needs, so it
-                            // opens here whether or not there is a browser to hand.
-                            onOpenDetail(entry.detail)
-                        }
+                        centerSlots = true,
+                        // The icon keeps the tinted plate it had on the tiles. It is what makes
+                        // the list scannable the way a launcher's icons are: at this size the
+                        // outline of the icon alone is not enough to tell one row from another at
+                        // a glance, and the colour is what the eye lands on first.
+                        leadingContent = {
+                            Box {
+                                FeaturePlateIcon(entry.icon)
+
+                                // On the plate's corner, the same mark the tiles carried: a mode
+                                // that is on with apps listed looks exactly like one that is off
+                                // from here, and this is the one thing about a row that changes on
+                                // its own.
+                                if (entry.detail in active) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .offset(x = 2.dp, y = 2.dp)
+                                            .size(ActiveDotSize)
+                                            .background(ActiveGreen, CircleShape)
+                                    )
+                                }
+                            }
+                        },
+                        headlineContent = { Text(label) },
+                        trailingContent = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null
+                            )
+                        },
+                        onClick = { onOpenDetail(entry.detail) }
                     )
                 }
             }
@@ -257,9 +215,9 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
  * Every answer here but one is this app's own record, which is a preference read. Autostart is the
  * exception: its list belongs to the platform, and the platform is asked one command for all of
  * it. That, and the size of the hiding lists, is why this is worked out off the main thread once
- * when the tab is shown rather than inside each tile.
+ * when the tab is shown rather than inside each row.
  *
- * Two tiles are left out on purpose, and not because they were forgotten. App ops is a browser
+ * Two features are left out on purpose, and not because they were forgotten. App ops is a browser
  * rather than a mode: nothing about it is on or off, and the one change it can make that is
  * recorded at all - blocking an app's network - writes the firewall's list, which already has a
  * dot of its own. Activities, device info, the log, the shell and More Apps are places to look
@@ -267,9 +225,9 @@ fun LabsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
  */
 private fun activeFeatures(context: Context): Set<Detail> = buildSet {
     AppToggleFeature.entries.forEach { feature ->
-        // Every hiding signal answers for the grouped tile rather than for a detail of its
-        // own: whichever of the six is doing something lights the one dot, and the set is
-        // what keeps six answers from becoming six entries.
+        // Every hiding signal answers for the grouped row rather than for a detail of its own:
+        // whichever of the six is doing something lights the one dot, and the set is what keeps
+        // six answers from becoming six entries.
         val detail = if (feature.signal != null) {
             Detail.HIDING
         } else {
@@ -278,7 +236,7 @@ private fun activeFeatures(context: Context): Set<Detail> = buildSet {
 
         val count = when {
             // The mode has to be on for the list to be doing anything, which is the whole
-            // difference between the two hiding lists that look alike from the grid.
+            // difference between the two hiding lists that look alike from here.
             feature.signal != null ->
                 if (Hiding.isSignalEnabled(feature.signal)) Hiding.appsFor(feature.signal).size
                 else 0
@@ -291,127 +249,14 @@ private fun activeFeatures(context: Context): Set<Detail> = buildSet {
         if (count > 0) add(detail)
     }
 
-    // The other switch in the grid, and the same question asked of it: on, and with apps to
-    // act on.
+    // The other switch in the list, and the same question asked of it: on, and with apps to act
+    // on.
     if (ForceDark.hasWorkToDo()) add(Detail.FORCE_DARK)
 }
 
-/** One tile of the grid: what it is called, what is on it, and where it goes. */
+/** One row of the list: what it is called, what is on it, and where it goes. */
 private data class LabEntry(
     @StringRes val labelRes: Int,
     val icon: ImageVector,
     val detail: Detail
 )
-
-/**
- * One feature: its icon on a tinted plate, its name under it, and nothing else.
- *
- * The plate is what makes the grid scannable, the way a launcher's icons do: at this size the
- * outline of the icon alone is not enough to tell one tile from another at a glance, and the
- * colour is what the eye lands on first.
- */
-@Composable
-private fun LabTile(
-    icon: ImageVector,
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    BoxWithConstraints {
-        // Every part is a fraction of the width the tile was given, and the height is what those
-        // parts add up to. Nothing here is a fixed size, which is the point of it: the same tile
-        // is a third of a phone and a third of a tablet, and a plate fixed at 40dp looked small
-        // on whichever of the two was wider.
-        val plate = (maxWidth - TilePadding * 2) * PlateFraction
-
-        // The name's room in this device's own terms: a line of the type the name is set in, times
-        // the lines it may take. A measurement rather than a number of dp, because the font scale
-        // is part of the answer and it was not part of the 40dp this used to be.
-        val labelHeight = with(LocalDensity.current) {
-            MaterialTheme.typography.labelLarge.lineHeight.toDp() * LabelLines
-        }
-
-        Surface(
-            modifier = modifier
-                .fillMaxWidth()
-                // The sum of the parts, so every tile in the grid is the same height whatever its
-                // name runs to - a grid whose rows differ in height does not read as a grid.
-                .height(TilePadding * 2 + plate + PlateGap + labelHeight)
-                // Clipped first, so the press and focus layers take the tile's rounded shape
-                // instead of showing square corners past it.
-                .clip(MaterialTheme.shapes.large)
-                .clickable(onClick = onClick)
-                .then(
-                    if (LocalAmoledTheme.current) {
-                        Modifier.border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            shape = MaterialTheme.shapes.large
-                        )
-                    } else {
-                        Modifier
-                    }
-                ),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = TilePadding, vertical = TilePadding),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Box {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth(PlateFraction)
-                            .aspectRatio(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.fillMaxSize(IconFraction)
-                            )
-                        }
-                    }
-
-                    // On the plate's bottom corner, the way an unread count sits on an icon: the
-                    // grid is read by shape and colour at a glance, and this is the one thing
-                    // about a tile that changes on its own. Below rather than above, because the
-                    // status bar the grid scrolls under is up there and a mark at the top of a
-                    // tile reads as part of whatever is on its way past.
-                    if (active) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .offset(x = 2.dp, y = 2.dp)
-                                .size(ActiveDotSize)
-                                .background(ActiveGreen, CircleShape)
-                        )
-                    }
-                }
-
-                Text(
-                    text = label,
-                    modifier = Modifier
-                        .padding(top = PlateGap)
-                        .fillMaxWidth(),
-                    // A step down from the size this was, which is what keeps a long word whole: at
-                    // three across the name has to stack word by word, and every point of size the
-                    // text does not take is a word that does not have to be broken.
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = LabelLines,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}

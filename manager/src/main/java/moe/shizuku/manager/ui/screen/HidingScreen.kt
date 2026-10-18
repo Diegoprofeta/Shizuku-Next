@@ -42,6 +42,7 @@ import moe.shizuku.manager.manage.Signal
 import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.ui.Detail
 import moe.shizuku.manager.ui.component.ExpressiveSwitch
+import moe.shizuku.manager.ui.component.FeaturePlateIcon
 import moe.shizuku.manager.ui.component.SegmentedCard
 
 /**
@@ -162,13 +163,7 @@ fun HidingScreen(
                             feature?.let { Detail.of(it) }?.let(onOpenDetail)
                         },
                         leadingContent = {
-                            feature?.let { toggle ->
-                                Icon(
-                                    imageVector = toggle.icon,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            feature?.let { toggle -> FeaturePlateIcon(toggle.icon) }
                         },
                         headlineContent = { Text(stringResource(row.signal.labelRes)) },
                         supportingContent = {
