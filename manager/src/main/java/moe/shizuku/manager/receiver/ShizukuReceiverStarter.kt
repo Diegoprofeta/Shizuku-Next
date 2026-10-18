@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.work.WorkManager
 import com.topjohnwu.superuser.Shell
 import moe.shizuku.manager.R
 import moe.shizuku.manager.AppConstants
@@ -209,7 +210,38 @@ object ShizukuReceiverStarter {
         // honour the "wait for Wi-Fi" setting.
         val immediate = userInitiated || !ShizukuSettings.getWaitForWifi()
         AdbStartWorker.enqueue(context, startMethod = startMethod, immediate = immediate)
-        updateNotification(context, WorkerState.AWAITING_WIFI)
+        // "Waiting for Wi-Fi" only when there is a wait: a start that goes ahead without one
+        // would say it was waiting for a network it does not use, which is the line the user
+        // reads after a tap that already worked.
+        updateNotification(
+            context,
+            if (needsNetwork && !immediate) WorkerState.AWAITING_WIFI else WorkerState.RUNNING
+        )
+    }
+
+    /**
+     * A server that is up, and a start that was still waiting for a network.
+     *
+     * The two only meet when the server arrived by another route: a root or system start from the
+     * card, or an `adb` connection from a computer, while this app's own wireless start sat on its
+     * Wi-Fi constraint. Nothing took that queued work back, so its notification stayed on the phone
+     * saying "Waiting for Wi-Fi" over a service that was already running - and the moment a network
+     * did appear, the worker would have started a second server on top of the one that was there,
+     * replacing the root server the user had just started by hand.
+     *
+     * Called from the state machine on every RUNNING transition rather than from the starts
+     * themselves, because the start that won need not be one of ours.
+     *
+     * A worker already in flight is left alone: that one is what brought this server up, it
+     * cancels its own notification when it is done, and cancelling it here would end a start
+     * mid-connect - the TCP port it opens afterwards, and the settle check that reconnects a
+     * server the platform took away again, both run after the binder appears.
+     */
+    fun onServerRunning(context: Context) {
+        if (AdbStartWorker.inFlight) return
+        WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(NOTIFICATION_ID)
     }
 
     fun buildNotification(

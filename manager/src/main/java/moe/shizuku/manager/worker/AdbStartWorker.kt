@@ -644,6 +644,12 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
         const val KEY_START_METHOD = "start_method"
 
         /**
+         * The unique name the queued start goes under. Named once because three places cancel it:
+         * a stop, the notification's own Cancel, and a server that came up some other way.
+         */
+        const val UNIQUE_WORK_NAME = "adb_start_worker"
+
+        /**
          * How long a start waits before checking that the server it brought up is still there.
          *
          * Long enough to cover the platform settling the debugging toggle this start just asked
@@ -721,7 +727,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 .build()
 
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "adb_start_worker",
+                UNIQUE_WORK_NAME,
                 ExistingWorkPolicy.REPLACE,
                 request
             )

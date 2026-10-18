@@ -16,6 +16,7 @@ import moe.shizuku.manager.manage.Hiding
 import moe.shizuku.manager.utils.Diag
 import moe.shizuku.manager.manage.HidingGrants
 import moe.shizuku.manager.manage.LabsReapply
+import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.start.grantLocalHotspotPermissionIfNeeded
 import moe.shizuku.manager.start.grantWriteSecureSettingsIfNeeded
 import rikka.shizuku.Shizuku
@@ -94,6 +95,13 @@ object ShizukuStateMachine {
                         else ShizukuSettings.LaunchMethod.ADB
                     )
                 }
+                // A start this app queued and is still waiting to make is answered by the server
+                // being up, whoever started it: the queued work goes, and with it the "Waiting for
+                // Wi-Fi" notification it left behind over a service that is already running. Left
+                // there, that work would have come due when a network appeared and started a
+                // second server on top of the one that is here now.
+                runCatching { ShizukuReceiverStarter.onServerRunning(appContext) }
+                    .onFailure { Diag.warn("ShizukuStateMachine", "Could not drop the queued start", it) }
             }
             // A deliberate stop (STOPPING -> STOPPED) is where the debugging toggles get
             // switched off, if the settings ask for it.

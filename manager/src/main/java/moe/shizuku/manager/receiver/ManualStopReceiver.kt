@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.work.WorkManager
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.utils.ShizukuStateMachine
+import moe.shizuku.manager.worker.AdbStartWorker
 import rikka.shizuku.Shizuku
 
 class ManualStopReceiver : AuthenticatedReceiver() {
@@ -16,7 +17,7 @@ class ManualStopReceiver : AuthenticatedReceiver() {
         // Mark the stop as intentional so the watchdog's dead-check doesn't undo
         // it, and drop any queued background start.
         ShizukuSettings.setManuallyStopped(true)
-        WorkManager.getInstance(context).cancelUniqueWork("adb_start_worker")
+        WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
 
         if (!ShizukuStateMachine.isRunning()) return
 

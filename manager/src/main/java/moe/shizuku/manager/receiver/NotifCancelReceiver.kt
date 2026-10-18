@@ -8,10 +8,11 @@ import androidx.work.WorkManager
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.utils.EnvironmentUtils
+import moe.shizuku.manager.worker.AdbStartWorker
 
 class NotifCancelReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        WorkManager.getInstance(context).cancelUniqueWork("adb_start_worker")
+        WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(ShizukuReceiverStarter.NOTIFICATION_ID)
     }

@@ -269,7 +269,7 @@ class WatchdogService : Service() {
         recordAttempt(now)
 
         // Cancel any prior WorkManager attempt so we don't inherit exponential backoff
-        WorkManager.getInstance(applicationContext).cancelUniqueWork("adb_start_worker")
+        WorkManager.getInstance(applicationContext).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
 
         serviceScope.launch {
             try {
