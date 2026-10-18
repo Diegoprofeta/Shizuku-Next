@@ -258,7 +258,13 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
         isManager = MANAGER_APPLICATION_ID.equals(requestPackageName);
 
-        if (clientManager.findClient(callingUid, callingPid) == null) {
+        // The existing client is taken, not just looked for: asking whether one is there and
+        // adding one only when there is not left clientRecord null for a client that was already
+        // registered, and the reply below dereferences it. A second attach from the same process
+        // - a client that reconnected without its pid changing - threw that NPE before the
+        // permission answer was written.
+        clientRecord = clientManager.findClient(callingUid, callingPid);
+        if (clientRecord == null) {
             synchronized (this) {
                 clientRecord = clientManager.addClient(callingUid, callingPid, application, requestPackageName, apiVersion);
             }
