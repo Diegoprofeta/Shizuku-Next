@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -439,6 +440,9 @@ fun LabsToggleScreen(
     fun setGate(checked: Boolean) {
         gateOn = checked
         scope.launch {
+            // Whether the platform refused to put something back, which is the one outcome the
+            // switch is not allowed to hide.
+            var refused = false
             val now = withContext(Dispatchers.IO) {
                 val signal = feature.signal
                 if (signal != null) {
@@ -452,11 +456,21 @@ fun LabsToggleScreen(
                     val key = feature.name
                     if (checked) {
                         BlockedGates.kept(key).forEach { app -> writeBlocked(app, true) }
+                        BlockedGates.setEnabled(key, true)
                     } else {
-                        BlockedGates.setKept(key, blocked)
-                        blocked.forEach { app -> writeBlocked(app, false) }
+                        // Only a list that was actually put back is remembered, and only then is
+                        // the gate switched off: reporting off over apps the platform still blocks
+                        // is a switch that says it worked while nothing changed, which is how this
+                        // was reported (issue #101).
+                        val stayed = blocked.filterNot { app -> writeBlocked(app, false) }
+                        if (stayed.isEmpty()) {
+                            BlockedGates.setKept(key, blocked)
+                            BlockedGates.setEnabled(key, false)
+                        } else {
+                            refused = true
+                            BlockedGates.setEnabled(key, true)
+                        }
                     }
-                    BlockedGates.setEnabled(key, checked)
                 }
                 // The watch starts and stops with the gates, so it is told to look again: turning
                 // the last one off has nothing left to do.
@@ -464,6 +478,9 @@ fun LabsToggleScreen(
                 readBlocked(feature, context)
             }
             blocked = now
+            if (refused) {
+                Toast.makeText(context, R.string.labs_gate_stays_on, Toast.LENGTH_SHORT).show()
+            }
             version++
         }
     }

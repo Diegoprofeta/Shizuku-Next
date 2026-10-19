@@ -70,7 +70,15 @@ object FirewallApi {
             .invoke(service, CHAIN) as Boolean
     }
 
-    /** Switches the chain on or off, answering whether the platform took the call. */
+    /**
+     * Switches the chain on or off, answering whether the platform took the call.
+     *
+     * The call is void, and `invoke` answers null for a void method: reading that null as the
+     * answer made this report a refusal after having made the call. On the ROMs the fallback
+     * exists for - the ones whose connectivity command is missing - the chain was switched and
+     * the caller was told it was not, so the block set afterwards was thrown away as a failure
+     * and the switch sprang back. Reaching the end of the block is the answer.
+     */
     fun setChainEnabled(enabled: Boolean): Boolean = withService { service ->
         service.javaClass
             .getMethod(
@@ -79,7 +87,8 @@ object FirewallApi {
                 Boolean::class.javaPrimitiveType
             )
             .invoke(service, CHAIN, enabled)
-    } != null
+        true
+    } == true
 
     /** The rule set for [uid] on this chain, or null when the platform cannot be asked. */
     fun blockedRule(uid: Int): Int? = withService { service ->
@@ -92,7 +101,12 @@ object FirewallApi {
             .invoke(service, CHAIN, uid) as Int
     }
 
-    /** Blocks or allows [uid] on this chain, answering whether the platform took the call. */
+    /**
+     * Blocks or allows [uid] on this chain, answering whether the platform took the call.
+     *
+     * The call is void, so the null `invoke` answers for it is not a refusal - see
+     * [setChainEnabled] for what reading it as one did.
+     */
     fun setBlocked(uid: Int, blocked: Boolean): Boolean = withService { service ->
         service.javaClass
             .getMethod(
@@ -102,7 +116,8 @@ object FirewallApi {
                 Int::class.javaPrimitiveType
             )
             .invoke(service, CHAIN, uid, ruleFor(blocked))
-    } != null
+        true
+    } == true
 
     /**
      * Calls [block] with the connectivity interface, or answers null when there is nothing to call.

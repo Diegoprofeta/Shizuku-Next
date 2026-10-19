@@ -557,6 +557,7 @@
     <string name="intents_adb_command">Start via Computer</string>
     <string name="intents_status_broadcast">Status broadcast</string>
     <string name="intents_status_broadcast_extra">status extra: 1 = running, 0 = not</string>
+    <string name="labs_gate_stays_on">Some apps could not be changed, so the list stays on</string>
     <string name="intents_values">For automation apps</string>
     <string name="intents_package">Package</string>
     <string name="intents_action_for">%1$s action</string>

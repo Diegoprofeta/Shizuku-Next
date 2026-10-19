@@ -575,18 +575,24 @@ object PackageTools {
         }
 
         val value = if (blocked) "false" else "true"
-        val ran = shellOk("cmd connectivity set-package-networking-enabled $value $packageName")
+        // The command is tried first, but its exit code is not the answer: a ROM can accept the
+        // verb and leave the rule where it was, which is a switch that does nothing while the
+        // command says it worked. What it did is read, and the same rule is set through the
+        // interface behind the command whenever the answer is not the one that was asked for.
+        var applied = shellOk("cmd connectivity set-package-networking-enabled $value $packageName") &&
+            readNetworkBlocked(context, packageName) == blocked
 
-        // A ROM whose connectivity command has no such verb answers that it did not run, and the
-        // same rule is set through the interface behind the command instead.
-        if (!ran) {
+        // A ROM whose connectivity command has no such verb, or has one that does not take,
+        // gets the same rule through the interface it is a front end for.
+        if (!applied) {
             val uid = uidOf(context, packageName) ?: return false
-            if (!FirewallApi.setBlocked(uid, blocked)) return false
+            if (FirewallApi.setBlocked(uid, blocked)) {
+                // Read through the channel that wrote it: the command may be the half that does
+                // not work here, and its answer would discard a rule the platform did take.
+                applied = FirewallApi.isBlocked(FirewallApi.blockedRule(uid)) == blocked
+            }
         }
 
-        // Read back rather than trusted, whichever way it was set: the read has the same fallback,
-        // so what the switch shows is what the platform holds.
-        val applied = readNetworkBlocked(context, packageName) == blocked
         // Recorded only once the platform agreed, because this is what the Firewall list shows
         // and a list that says a package is blocked when it is not is worse than no list.
         if (applied) rememberFirewallBlocked(context, packageName, blocked)
