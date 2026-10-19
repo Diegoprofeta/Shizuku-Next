@@ -161,6 +161,8 @@
     <string name="hiding_hidden_count">%1$d hidden</string>
     <string name="hiding_gate">Enabled</string>
     <string name="hiding_gate_disabled">Disabled</string>
+    <string name="hiding_restart_on_open">Close and reopen on launch</string>
+    <string name="hiding_restart_on_open_summary">Apps on a list are closed and opened again when you start them, so they read the hidden settings. An app that was mid-edit loses what it had not saved.</string>
     <string name="hiding_gate_kept">%1$d kept</string>
     <string name="hiding_filter_hidden">Hidden</string>
     <string name="hiding_open_with_hiding">Open with the settings hidden</string>

@@ -151,6 +151,15 @@ class HidingWatchService : Service() {
      */
     private var lastLoggedState: String? = null
 
+    /**
+     * The app this watch has already restarted, so one launch is restarted once.
+     *
+     * Not a cooldown: the relaunched app comes straight back to the front without the watch ever
+     * seeing it leave, so a timer would only make the second kill later rather than absent. It is
+     * cleared the moment nothing is hidden any more, which is when the user has left the app.
+     */
+    private var restartedFor: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -254,6 +263,27 @@ class HidingWatchService : Service() {
                 .onFailure { Diag.warn(TAG, "the hiding pass failed", it) }
                 .getOrNull()
             holding.set(hidingFor)
+
+            // An app that has just been hidden for started before any of this, so it has read
+            // the settings it objects to. Only a new process can read the hidden ones, which is
+            // what the restart is for. Once per app session: the relaunch is the same app in
+            // front again, and restarting that too would end where it started.
+            if (hidingFor == null) {
+                restartedFor = null
+            } else if (hidingFor != restartedFor &&
+                Hiding.isRestartOnOpenEnabled() &&
+                Hiding.shellAvailable()
+            ) {
+                // Taken before the attempt, not only on success: a force-stop that failed would
+                // otherwise be asked for again on the next pass, once a second, over an app the
+                // user is looking at. One attempt per launch, and the way to try again is to
+                // leave the app and come back.
+                restartedFor = hidingFor
+                if (runCatching { Hiding.restartForLaunch(hidingFor) }.getOrDefault(false)) {
+                    Diag.info(TAG, "restarted $hidingFor so it reads the hidden settings")
+                }
+            }
+
             notify(notification(hidingFor, paused = false, forcingDark = ForceDark.isApplied()))
             logState(hidingFor)
             askForTheServerBack(hidingFor)
