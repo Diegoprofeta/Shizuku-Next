@@ -22,7 +22,7 @@ class BinderRequestReceiver : BroadcastReceiver() {
             !ShizukuSettings.getManuallyStopped() &&
             ShizukuSettings.getStartOnBoot(context)
         ) {
-            ShizukuReceiverStarter.start(context)
+            ShizukuReceiverStarter.start(context, reason = "binder-request")
         } else if (!ShizukuStateMachine.isRunning()) {
             // Nothing happens here otherwise, which is why a background start can look like
             // the request went nowhere: say which setting stopped it. A deliberate Stop is

@@ -56,6 +56,10 @@ object Starter {
                 ShizukuStateMachine.isRunning() ->
                     log?.invoke("\nThe service is still running.\n")
 
+                // A new start has begun since: the service is being replaced, not gone, and
+                // saying it went away would blame this start for what the next one is doing.
+                ShizukuStateMachine.get() == ShizukuStateMachine.State.STARTING -> Unit
+
                 // Stopped on purpose is not a service that went away, and the card already
                 // says so: this is the state every deliberate Stop leaves behind.
                 ShizukuSettings.getManuallyStopped() ->

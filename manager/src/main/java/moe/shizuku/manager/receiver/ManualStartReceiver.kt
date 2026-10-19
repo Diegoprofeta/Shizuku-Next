@@ -17,6 +17,6 @@ class ManualStartReceiver : AuthenticatedReceiver() {
         // tapped is answered at once with "connect to Wi-Fi", while this one waits for the network
         // like any unattended start, which is what an automation tool calling this expects. It is
         // also what this fork's base did before the flag was passed here.
-        ShizukuReceiverStarter.start(context)
+        ShizukuReceiverStarter.start(context, reason = "manual-start")
     }
 }

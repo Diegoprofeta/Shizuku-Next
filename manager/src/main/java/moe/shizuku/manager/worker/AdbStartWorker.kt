@@ -13,6 +13,7 @@ import android.database.ContentObserver
 import android.net.Uri
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import moe.shizuku.manager.service.HidingWatchService
@@ -23,10 +24,13 @@ import java.io.EOFException
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -70,7 +74,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         // Set before the first thing this attempt does and cleared in the `finally`, so the whole
         // attempt counts as one. See [inFlight] for who reads it and why.
-        inFlight = true
+        beginAttempt()
 
         try {
             // A hiding list is holding a debugging toggle off for an app the user has open. Every
@@ -87,7 +91,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
             return startServer()
         } finally {
-            inFlight = false
+            endAttempt()
             // A local-only hotspot is only ever brought up to give discovery an
             // interface, so it goes away with the attempt that needed it: leaving it up
             // would be tethering nobody asked for.
@@ -452,8 +456,15 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             }
             
             notify(WorkerState.CONNECTING)
+            // A start that was replaced while it looked for the port stops here. Cancelling the
+            // work does not interrupt the blocking calls below, so without this it went on to
+            // send its own starter, and two starters ran at once.
+            currentCoroutineContext().ensureActive()
             AdbStarter.startAdb(applicationContext, port, openTcpPort = usbMethod)
             Starter.waitForBinder()
+            // After the binder, not before: asked for sooner, the server is not there yet and the
+            // line always read zero.
+            AdbStarter.logStartedPids(ShizukuSettings.getLastAdbPort())
 
             // TCP mode promises a classic ADB port, and only a USB start ever opened one: a
             // wireless start, which is what the no-network method is, left TCP mode meaning
@@ -511,9 +522,22 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             settleScope.launch {
                 delay(START_SETTLE_MS)
                 if (Shizuku.pingBinder()) return@launch
+                // A ping that fails right after RUNNING can be momentary, so it is asked twice
+                // before the server is taken to be gone.
+                delay(SETTLE_RECHECK_MS)
+                if (Shizuku.pingBinder()) return@launch
                 // A stop asked for in between is an answer of its own: bringing the server back
                 // would be undoing what the user just did.
                 if (ShizukuSettings.getManuallyStopped()) return@launch
+                // Another start is already bringing the server back; connecting once more would
+                // start a second one over it.
+                if (startInProgress()) {
+                    Diag.info(
+                        AppConstants.TAG,
+                        "The server went away again, but another start is under way; not connecting once more"
+                    )
+                    return@launch
+                }
 
                 Diag.warn(
                     AppConstants.TAG,
@@ -522,6 +546,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 runCatching {
                     AdbStarter.startAdb(applicationContext, port, openTcpPort = usbMethod)
                     Starter.waitForBinder()
+                    AdbStarter.logStartedPids(ShizukuSettings.getLastAdbPort())
                 }.onFailure {
                     Diag.warn(AppConstants.TAG, "The second connect did not take either", it)
                 }
@@ -597,7 +622,8 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             )
             if (ignored.none { it.isInstance(e) }) showErrorNotification(applicationContext, e)
 
-            if (ShizukuStateMachine.update() == ShizukuStateMachine.State.RUNNING) {
+            // The poll no longer ends a start, so a failure says so itself.
+            if (ShizukuStateMachine.markStartFailed() == ShizukuStateMachine.State.RUNNING) {
                 return Result.success()
             } else {
                 notify(WorkerState.AWAITING_RETRY)
@@ -679,9 +705,42 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
          * the same process either way: no service or worker here declares a process of its own, and
          * WorkManager runs a worker in the process that enqueued it.
          */
+        private val inFlightCount = AtomicInteger(0)
+
+        /**
+         * A count rather than a flag: a replaced worker is cancelled while its successor is
+         * already running, and the one that was cancelled clearing a flag would have said that
+         * nothing was in flight over a start that was.
+         */
+        val inFlight: Boolean get() = inFlightCount.get() > 0
+
+        /** When the oldest attempt in flight began, for the logs. Zero when none is. */
         @Volatile
-        var inFlight: Boolean = false
+        var inFlightSince: Long = 0L
             private set
+
+        /** How long the attempts in flight have been going, or null when none is. */
+        fun inFlightAgeMs(): Long? =
+            if (inFlight) SystemClock.elapsedRealtime() - inFlightSince else null
+
+        /**
+         * Whether a start is under way by any route: a worker running, or the state machine inside
+         * its STARTING grace (which also covers the watchdog's direct start and the root one).
+         */
+        fun startInProgress(): Boolean =
+            inFlight || (ShizukuStateMachine.startingAgeMs()
+                ?.let { it < ShizukuStateMachine.STARTING_GRACE_MS } == true)
+
+        private fun beginAttempt() {
+            if (inFlightCount.getAndIncrement() == 0) inFlightSince = SystemClock.elapsedRealtime()
+        }
+
+        private fun endAttempt() {
+            inFlightCount.updateAndGet { if (it > 0) it - 1 else 0 }
+        }
+
+        /** The pause before the second look at a binder that did not answer. */
+        private const val SETTLE_RECHECK_MS = 1_000L
 
         /**
          * Longer than the experiment's own asking window, so the asking and the interface

@@ -307,7 +307,7 @@ class HidingWatchService : Service() {
         lastStartAttempt = now
 
         Diag.info(TAG, "nothing is hidden and the server is down: asking for a start")
-        runCatching { ShizukuReceiverStarter.start(applicationContext, forceStart = true) }
+        runCatching { ShizukuReceiverStarter.start(applicationContext, forceStart = true, reason = "hiding-watch") }
             .onFailure { Diag.warn(TAG, "asking for a start failed", it) }
     }
 
