@@ -166,39 +166,74 @@ fun IntentsScreen(onBack: () -> Unit) {
             item {
                 SegmentedColumn(modifier = Modifier.fillMaxWidth()) {
                     item {
-                        CommandRow(
+                        CopyRow(
                             label = stringResource(R.string.intents_start),
-                            command = broadcast("$PACKAGE.START", token.takeIf { requireToken }),
+                            value = broadcast("$PACKAGE.START", token.takeIf { requireToken }),
                             onCopy = { copy("Copied", it) }
                         )
                     }
                     item {
-                        CommandRow(
+                        CopyRow(
                             label = stringResource(R.string.intents_stop),
-                            command = broadcast("$PACKAGE.STOP", token.takeIf { requireToken }),
+                            value = broadcast("$PACKAGE.STOP", token.takeIf { requireToken }),
                             onCopy = { copy("Copied", it) }
                         )
                     }
                     item {
-                        CommandRow(
+                        CopyRow(
                             label = stringResource(R.string.intents_watchdog_on),
-                            command = broadcast("$PACKAGE.WATCHDOG_ON", null),
+                            value = broadcast("$PACKAGE.WATCHDOG_ON", null),
                             onCopy = { copy("Copied", it) }
                         )
                     }
                     item {
-                        CommandRow(
+                        CopyRow(
                             label = stringResource(R.string.intents_watchdog_off),
-                            command = broadcast("$PACKAGE.WATCHDOG_OFF", null),
+                            value = broadcast("$PACKAGE.WATCHDOG_OFF", null),
                             onCopy = { copy("Copied", it) }
                         )
                     }
                     item {
-                        CommandRow(
+                        CopyRow(
                             label = stringResource(R.string.intents_watchdog_toggle),
-                            command = broadcast("$PACKAGE.WATCHDOG_TOGGLE", null),
+                            value = broadcast("$PACKAGE.WATCHDOG_TOGGLE", null),
                             onCopy = { copy("Copied", it) }
                         )
+                    }
+                }
+            }
+
+            // The same five broadcasts as values rather than as commands: an automation app asks
+            // for an action and a package separately, and until now the screen only offered the
+            // whole `am` command, which meant retyping both by hand from a line that cannot be
+            // split reliably on a phone (issue #121).
+            item {
+                Text(
+                    text = stringResource(R.string.intents_values),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+
+            item {
+                SegmentedColumn(modifier = Modifier.fillMaxWidth()) {
+                    item {
+                        CopyRow(
+                            label = stringResource(R.string.intents_package),
+                            value = PACKAGE,
+                            onCopy = { copy("Copied", it) }
+                        )
+                    }
+                    actions.forEach { (label, action) ->
+                        item {
+                            CopyRow(
+                                label = stringResource(
+                                    R.string.intents_action_for,
+                                    stringResource(label)
+                                ),
+                                value = "$PACKAGE.$action",
+                                onCopy = { copy("Copied", it) }
+                            )
+                        }
                     }
                 }
             }
@@ -214,21 +249,43 @@ fun IntentsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun CommandRow(label: String, command: String, onCopy: (String) -> Unit) {
+private fun CopyRow(label: String, value: String, onCopy: (String) -> Unit) {
     SegmentedListItem(
         headlineContent = { Text(label) },
-        supportingContent = { Text(command, fontFamily = FontFamily.Monospace) },
+        supportingContent = { Text(value, fontFamily = FontFamily.Monospace) },
         trailingContent = {
-            PillButtonQuiet(onClick = { onCopy(command) }) {
+            PillButtonQuiet(onClick = { onCopy(value) }) {
                 Text(stringResource(R.string.intents_copy))
             }
         }
     )
 }
 
-private fun broadcast(action: String, token: String?): String =
+/**
+ * The five broadcasts, as the action suffixes an automation app wants.
+ *
+ * Kept beside the commands rather than derived from them: a command is a line to paste, and
+ * the action inside it is one field of somebody else's form.
+ */
+private val actions = listOf(
+    R.string.intents_start to "START",
+    R.string.intents_stop to "STOP",
+    R.string.intents_watchdog_on to "WATCHDOG_ON",
+    R.string.intents_watchdog_off to "WATCHDOG_OFF",
+    R.string.intents_watchdog_toggle to "WATCHDOG_TOGGLE"
+)
+
+/**
+ * The command to paste, with the package named.
+ *
+ * `am broadcast` without `-p` delivers the action to every app that declares it, and the
+ * broadcast is only addressed to this one: a hidden copy of the app answers to its own name, and
+ * pointing at a package that is not installed is the same as not pointing at anything at all.
+ */
+private fun broadcast(action: String, token: String?): String = buildString {
+    append("adb shell am broadcast -a ").append(action)
+    append(" -p ").append(PACKAGE)
     if (token != null) {
-        "adb shell am broadcast -a $action --es auth $token"
-    } else {
-        "adb shell am broadcast -a $action"
+        append(" --es auth ").append(token)
     }
+}

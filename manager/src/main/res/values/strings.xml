@@ -557,6 +557,9 @@
     <string name="intents_adb_command">Start via Computer</string>
     <string name="intents_status_broadcast">Status broadcast</string>
     <string name="intents_status_broadcast_extra">status extra: 1 = running, 0 = not</string>
+    <string name="intents_values">For automation apps</string>
+    <string name="intents_package">Package</string>
+    <string name="intents_action_for">%1$s action</string>
     <string name="home_battery_warning">Shizuku may be killed in the background. Allow it to ignore battery optimizations.</string>
     <string name="batch_selected_count">%1$d selected</string>
     <string name="app_management_action_select_all">Select all</string>
