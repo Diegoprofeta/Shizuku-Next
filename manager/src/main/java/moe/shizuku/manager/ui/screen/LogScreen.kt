@@ -83,6 +83,7 @@ import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
+import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.manage.InstalledPackages
 import moe.shizuku.manager.manage.Logcat
 import moe.shizuku.manager.ui.component.AppFilterChip
@@ -293,6 +294,7 @@ private fun AppLogTab(bottomPadding: Dp) {
             IconButton(
                 onClick = {
                     Diag.clear()
+                    setPulledUpTo(0L)
                     version++
                     Toast.makeText(context, context.getString(R.string.log_cleared), Toast.LENGTH_SHORT).show()
                 }
@@ -848,10 +850,29 @@ private fun AnnotatedString.Builder.appendMarked(message: String, query: String)
  *
  * Runs shell commands; not for the main thread.
  */
+/**
+ * The newest logcat line this app has stored.
+ *
+ * Without it every pull took the same window again and appended all of it, so pressing
+ * refresh twice doubled the stored log. That is what made a handful of attach lines read as a
+ * flood (issue #122). Kept in the preferences rather than in memory so a restart of the app
+ * does not import the same window again either.
+ */
+private const val PREF_PULLED_UP_TO = "log_pulled_up_to"
+
+private fun pulledUpTo(): Long =
+    ShizukuSettings.getPreferences().getLong(PREF_PULLED_UP_TO, 0L)
+
+private fun setPulledUpTo(at: Long) {
+    ShizukuSettings.getPreferences().edit().putLong(PREF_PULLED_UP_TO, at).apply()
+}
+
 private fun pullLogcat(): Int {
     val filter = SHIZUKU_TAGS.joinToString(" ") { "$it:V" }
     val out = runShellCommand("logcat -d -v epoch -t 600 $filter '*:S' 2>/dev/null") ?: return 0
 
+    val since = pulledUpTo()
+    var newest = since
     var added = 0
     out.lineSequence().forEach { line ->
         val match = LOGCAT.find(line) ?: return@forEach
@@ -866,9 +887,18 @@ private fun pullLogcat(): Int {
         // belongs here is this process's own.
         if (tag == "ShizukuApplication" && pid != Process.myPid()) return@forEach
         val at = match.groupValues[1].toDoubleOrNull()?.times(1000)?.toLong() ?: return@forEach
-        Diag.log(match.groupValues[3].firstOrNull() ?: 'I', tag, match.groupValues[5].trim())
+        // Already stored by an earlier pull.
+        if (at <= since) return@forEach
+        Diag.store(
+            at,
+            match.groupValues[3].firstOrNull() ?: 'I',
+            tag,
+            match.groupValues[5].trim()
+        )
+        if (at > newest) newest = at
         added++
     }
+    if (newest > since) setPulledUpTo(newest)
     return added
 }
 
