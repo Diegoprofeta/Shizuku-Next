@@ -216,6 +216,12 @@
     <string name="power_screen_off_summary">Turn off the screen. If a screen lock is set, the phone will lock too.</string>
     <string name="power_confirm_title">Are you sure?</string>
     <string name="power_confirm">Continue</string>
+    <string name="power_soft_reboot">Soft reboot</string>
+    <string name="power_soft_reboot_summary">Restart Android without restarting the kernel. Requires root.</string>
+    <string name="power_soft_reboot_confirm">Android will restart. All apps and the system UI will close and reopen, but the phone itself will not restart. You may need to start Shizuku again afterwards.</string>
+    <string name="power_needs_root">Root is required, but this device is not rooted.</string>
+    <string name="power_needs_shizuku_rooted">Shizuku is not running. Only soft reboot is available.</string>
+    <string name="power_failed">Could not run %1$s</string>
     <string name="tab_display">Display</string>
     <string name="display_description">Change the screen resolution, density, and refresh rate. If the screen becomes hard to use, tap Reset next to the setting.</string>
     <string name="display_needs_shizuku">Start Shizuku to view or change these settings.</string>

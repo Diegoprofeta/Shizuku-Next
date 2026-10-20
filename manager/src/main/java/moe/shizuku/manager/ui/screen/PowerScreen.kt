@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.topjohnwu.superuser.Shell
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,7 +62,9 @@ private enum class PowerAction(
     @StringRes val titleRes: Int,
     @StringRes val summaryRes: Int,
     val command: String,
-    @StringRes val confirmRes: Int? = null
+    @StringRes val confirmRes: Int? = null,
+    /** Only root can send this one; the row is not shown where it cannot work. */
+    val rootOnly: Boolean = false
 ) {
     REBOOT(
         R.string.power_reboot,
@@ -90,6 +94,19 @@ private enum class PowerAction(
         R.string.power_off_confirm
     ),
 
+    /**
+     * Restarts the framework, not the kernel: every app and the system UI come back, the phone
+     * does not. Root only, because `ctl.restart` is a property of init's own and the adb shell
+     * identity is not allowed to write it.
+     */
+    SOFT_REBOOT(
+        R.string.power_soft_reboot,
+        R.string.power_soft_reboot_summary,
+        "setprop ctl.restart zygote",
+        R.string.power_soft_reboot_confirm,
+        rootOnly = true
+    ),
+
     /** No confirmation: sleeping the display is undone by the power button. */
     SCREEN_OFF(
         R.string.power_screen_off,
@@ -115,14 +132,29 @@ fun PowerScreen(bottomPadding: Dp, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var running by remember { mutableStateOf(ShizukuStateMachine.isRunning()) }
+    var rooted by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<PowerAction?>(null) }
 
     // Asked of the binder rather than of the last known state: the screen can be opened after
     // the server went away and nothing noticed.
     fun refresh() {
         scope.launch {
+            // The binder first, because it is the quick one and it decides most of the rows.
+            // The root probe can spend seconds waiting on `su` where there is no root, and it
+            // must not hold the rest of the screen behind it.
             running = withContext(Dispatchers.IO) {
                 ShizukuStateMachine.update() == ShizukuStateMachine.State.RUNNING
+            }
+            // Asked without asking: neither check raises a prompt, so opening a power menu
+            // cannot put a root dialog over the phone. `isAppGrantedRoot` answers only for a
+            // grant this process has already used, so the su binary Magisk, KernelSU and
+            // APatch all install is the second half: it says the phone is rooted even before
+            // this app has needed root, and the prompt, if one is due, comes when the row is
+            // tapped rather than when the screen is opened.
+            rooted = withContext(Dispatchers.IO) {
+                runCatching {
+                    Shell.isAppGrantedRoot() == true || File("/system/bin/su").exists()
+                }.getOrDefault(false)
             }
         }
     }
@@ -131,17 +163,43 @@ fun PowerScreen(bottomPadding: Dp, onBack: () -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh() }
 
     fun send(action: PowerAction) {
-        if (!ShizukuStateMachine.isRunning()) {
+        if (action.rootOnly) {
+            if (!rooted) {
+                Toast.makeText(context, R.string.power_needs_root, Toast.LENGTH_SHORT).show()
+                return
+            }
+        } else if (!ShizukuStateMachine.isRunning()) {
             Toast.makeText(context, R.string.power_needs_shizuku, Toast.LENGTH_SHORT).show()
             return
         }
 
         Diag.info(AppConstants.TAG, "power: ${action.name}")
         scope.launch {
-            withContext(Dispatchers.IO) {
+            val sent = withContext(Dispatchers.IO) {
                 // No result to read: the reboot ends the shell that sent it, and the sleep key
                 // has nothing to say. The device doing it is the confirmation.
-                runShellCommand(action.command)
+                if (action.rootOnly) {
+                    // Root's own shell rather than Shizuku's: `ctl.restart` belongs to init, and
+                    // the shell identity Shizuku runs as is refused it. The one answer worth
+                    // reading is whether root itself was refused, which is what a denial looks
+                    // like here.
+                    runCatching { Shell.cmd(action.command).exec() }
+                        .onFailure { Diag.warn(AppConstants.TAG, "${action.name} failed", it) }
+                        .getOrNull()
+                        ?.isSuccess == true
+                } else {
+                    runShellCommand(action.command)
+                    true
+                }
+            }
+            // A successful soft reboot takes the app down before this is drawn, so this only
+            // ever appears when the command did not run at all.
+            if (!sent && action.rootOnly) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.power_failed, context.getString(action.titleRes)),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -201,10 +259,14 @@ fun PowerScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 item {
                     Text(
                         text = stringResource(
-                            if (running) R.string.power_description else R.string.power_needs_shizuku
+                            when {
+                                running -> R.string.power_description
+                                rooted -> R.string.power_needs_shizuku_rooted
+                                else -> R.string.power_needs_shizuku
+                            }
                         ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (running) {
+                        color = if (running || rooted) {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
                             MaterialTheme.colorScheme.error
@@ -216,16 +278,20 @@ fun PowerScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 item {
                     SegmentedColumn(modifier = Modifier.fillMaxWidth()) {
                         PowerAction.entries.forEach { action ->
+                            // A row that cannot work is not offered: the soft reboot is the one
+                            // that needs root instead of Shizuku, and on a phone without root
+                            // there is nothing to say about it.
+                            if (action.rootOnly && !rooted) return@forEach
                             item {
                                 SegmentedListItem(
                                     headlineContent = { Text(stringResource(action.titleRes)) },
                                     supportingContent = {
                                         Text(stringResource(action.summaryRes))
                                     },
-                                    // A row that cannot act is shown as one: what this screen
-                                    // needs is Shizuku being up, and a tap that does nothing is
-                                    // worse than a row that says why.
-                                    enabled = running,
+                                    // A row that cannot act is shown as one: what the rest of
+                                    // this screen needs is Shizuku being up, and a tap that does
+                                    // nothing is worse than a row that says why.
+                                    enabled = if (action.rootOnly) rooted else running,
                                     onClick = {
                                         if (action.confirmRes != null) confirming = action
                                         else send(action)
