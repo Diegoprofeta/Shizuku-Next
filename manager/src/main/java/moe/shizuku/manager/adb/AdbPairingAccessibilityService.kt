@@ -280,7 +280,7 @@ class AdbPairingAccessibilityService : AccessibilityService() {
         // Not userInitiated: nobody tapped for this one, it is the pairing finishing by itself.
         // Wi-Fi is necessarily up - pairing runs over it - so this changes nothing today; it just
         // keeps the flag meaning what its name says.
-        ShizukuReceiverStarter.start(this)
+        ShizukuReceiverStarter.start(this, reason = "pairing-accessibility")
 
         pairing = false
         if (isTelevision) disableSelf()

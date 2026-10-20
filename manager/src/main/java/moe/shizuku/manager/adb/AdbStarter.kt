@@ -14,7 +14,9 @@ import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -56,7 +58,17 @@ object AdbStarter {
         openTcpPort: Boolean = false
     ) {
         suspend fun AdbClient.runCommand(cmd: String) {
-            command(cmd) { log?.invoke(String(it)) }
+            if (log != null) {
+                command(cmd) { log.invoke(String(it)) }
+                return
+            }
+            // A start with no screen has nowhere to show the starter's output, which used to
+            // discard the only account of what it found and whether it killed a server. The
+            // lines that say so go to the log instead; they arrive in chunks, so they are
+            // collected up to the newline.
+            val lines = StarterLineBuffer { Diag.info(TAG, "Starter: $it") }
+            command(cmd) { lines.append(String(it)) }
+            lines.flush()
         }
 
         // Deliberately NOT resetting adb_wifi_enabled here: keeping wireless
@@ -132,6 +144,9 @@ object AdbStarter {
                 // connectWithRetry reports a rejected handshake as pairing-required.
                 connectWithRetry(client)
                 log?.invoke("Successfully connected on port $activePort...\n")
+                // A start replaced while it connected must not go on to run its starter: the
+                // replacement runs one of its own, and the second one kills the first's server.
+                currentCoroutineContext().ensureActive()
                 client.runCommand("shell:${Starter.internalCommand}")
             }
 
@@ -148,7 +163,6 @@ object AdbStarter {
                 "Server started over ${if (viaTcp) "the classic (TCP) port" else "the wireless port"}" +
                     " on port $activePort"
             )
-            logStartedPids(activePort)
         }
     }
 
@@ -174,8 +188,15 @@ object AdbStarter {
      *
      * Best effort: a reading that fails leaves the two numbers at zero and the start it describes
      * carries on, because this is a diagnostic and not a step.
+     *
+     * Called once the binder has arrived rather than from [startAdb]: the server is a few seconds
+     * from existing when the command returns, and a reading taken then always said zero.
      */
-    private fun logStartedPids(port: Int) {
+    internal suspend fun logStartedPids(port: Int) = withContext(Dispatchers.IO) {
+        readAndLogPids(port)
+    }
+
+    private fun readAndLogPids(port: Int) {
         val serverOut = runShellCommand("pidof shizuku_server")
         val adbdOut = runShellCommand("pidof adbd")
         val server = serverOut?.trim()?.toIntOrNull() ?: 0

@@ -615,7 +615,7 @@ fun HomeScreen(bottomPadding: Dp) {
                     // last one that happened to work.
                     onStart = {
                         startWithLocalNetworkPermission(ShizukuSettings.getStartMethod()) {
-                            ShizukuReceiverStarter.start(context, userInitiated = true)
+                            ShizukuReceiverStarter.start(context, userInitiated = true, reason = "home-start")
                         }
                     },
                     // One tap, no confirmation: stopping is a normal action and the
@@ -632,7 +632,8 @@ fun HomeScreen(bottomPadding: Dp) {
                             ShizukuReceiverStarter.start(
                                 context,
                                 forceStart = true,
-                                userInitiated = true
+                                userInitiated = true,
+                                reason = "home-restart"
                             )
                         }
                     }
@@ -687,7 +688,8 @@ fun HomeScreen(bottomPadding: Dp) {
                                     ShizukuReceiverStarter.start(
                                         context,
                                         userInitiated = true,
-                                        startMethod = ShizukuSettings.StartMethod.WIRELESS
+                                        startMethod = ShizukuSettings.StartMethod.WIRELESS,
+                                        reason = "home-wireless"
                                     )
                                 }
                             }
@@ -713,7 +715,8 @@ fun HomeScreen(bottomPadding: Dp) {
                                 ShizukuReceiverStarter.start(
                                     context,
                                     userInitiated = true,
-                                    startMethod = ShizukuSettings.StartMethod.USB
+                                    startMethod = ShizukuSettings.StartMethod.USB,
+                                    reason = "home-usb"
                                 )
                             }
                         )
@@ -752,7 +755,8 @@ fun HomeScreen(bottomPadding: Dp) {
                                 ShizukuReceiverStarter.start(
                                     context,
                                     userInitiated = true,
-                                    startMethod = ShizukuSettings.StartMethod.SYSTEM
+                                    startMethod = ShizukuSettings.StartMethod.SYSTEM,
+                                    reason = "home-system"
                                 )
                             }
                         )

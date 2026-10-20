@@ -60,13 +60,26 @@ object ShizukuReceiverStarter {
      * from another app's intent, from the pairing flow or from a boot is nobody's tap and waits for
      * the network - which is what the unattended starts have to do, since Wi-Fi routinely arrives a
      * few seconds after they try.
+     *
+     * [reason] names the entry point, for the log only.
+     *
+     * One start at a time: a request that arrives while another is under way joins it instead of
+     * queueing its own, unless it is a Restart somebody tapped. See [decideStart].
      */
     fun start(
         context: Context,
         forceStart: Boolean = false,
         userInitiated: Boolean = false,
-        @ShizukuSettings.StartMethod startMethod: Int = ShizukuSettings.getStartMethod()
+        @ShizukuSettings.StartMethod startMethod: Int = ShizukuSettings.getStartMethod(),
+        reason: String = "unspecified"
     ) {
+        // Who asked, written down for every request: a server replaced out of the blue has no
+        // other trace of what replaced it.
+        Diag.info(
+            AppConstants.TAG,
+            "Start requested by $reason (forced=$forceStart, user=$userInitiated)"
+        )
+
         // A start request from any entry point clears manual-stop suppression.
         ShizukuSettings.setManuallyStopped(false)
         // And it ends the watchdog's boot gate: a server asked for is a server worth keeping
@@ -78,11 +91,27 @@ object ShizukuReceiverStarter {
         // left the belief behind, and a start was then ignored in silence: a tap that does
         // nothing at all, until a reboot resets the belief. The refusal is also said out
         // loud now, because a tap that quietly does nothing is the worst of the two.
-        val wasRunning = UserHandleCompat.myUserId() > 0 ||
+        // Asked before anything is marked or queued: a request that is only joining a start
+        // must leave the watchdog's guard, the running method and the status card as that start
+        // set them.
+        val inFlightAgeMs = AdbStartWorker.inFlightAgeMs()
+            ?: ShizukuStateMachine.startingAgeMs()?.takeIf { it < ShizukuStateMachine.STARTING_GRACE_MS }
+        val binderAlive = UserHandleCompat.myUserId() > 0 ||
             ShizukuStateMachine.update() == ShizukuStateMachine.State.RUNNING
-        if (wasRunning && !forceStart) {
-            Diag.info(AppConstants.TAG, "Start ignored: the service is already running")
-            return
+        when (decideStart(binderAlive, forceStart, userInitiated, startInFlight = inFlightAgeMs != null)) {
+            StartDecision.IGNORE_RUNNING -> {
+                Diag.info(AppConstants.TAG, "Start ignored: the service is already running")
+                return
+            }
+            StartDecision.JOIN_IN_FLIGHT -> {
+                Diag.info(
+                    AppConstants.TAG,
+                    "Start requested by $reason joined the one already in flight " +
+                        "(${(inFlightAgeMs ?: 0L) / 1000} s old)"
+                )
+                return
+            }
+            StartDecision.START -> Unit
         }
         // A forced start replaces whatever is there, so the binder death on the way is ours,
         // and the watchdog reads a binder death as a crash unless it is told otherwise: it
@@ -326,7 +355,7 @@ object ShizukuReceiverStarter {
             Diag.warn(AppConstants.TAG, "Root was revoked before the start could use it")
             Shell.getCachedShell()?.close()
             StartStatusReporter.failed(context.getString(R.string.start_failed_root_unavailable))
-            ShizukuStateMachine.update()
+            ShizukuStateMachine.markStartFailed()
             return
         }
 
@@ -335,7 +364,7 @@ object ShizukuReceiverStarter {
             Shell.cmd(Starter.internalCommand).exec()
         } catch (e: Exception) {
             Diag.error(AppConstants.TAG, "Failed to start Shizuku with root", e)
-            ShizukuStateMachine.update()
+            ShizukuStateMachine.markStartFailed()
         }
     }
 

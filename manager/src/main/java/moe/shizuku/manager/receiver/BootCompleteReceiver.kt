@@ -18,7 +18,7 @@ class BootCompleteReceiver : BroadcastReceiver() {
 
         // The receiver is enabled by either start on boot or ADB without Developer options,
         // so its presence says nothing about this setting; ask the setting itself.
-        if (ShizukuSettings.getStartOnBoot(context)) ShizukuReceiverStarter.start(context)
+        if (ShizukuSettings.getStartOnBoot(context)) ShizukuReceiverStarter.start(context, reason = "boot")
         if (ShizukuSettings.getWatchdog()) WatchdogService.start(context)
         // Alarms do not survive a reboot, so the watchdog's backstop has to be armed again here
         // or the first process death after a restart is the one nothing comes back from. The

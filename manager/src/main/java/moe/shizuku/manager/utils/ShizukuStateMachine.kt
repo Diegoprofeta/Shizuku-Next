@@ -3,6 +3,7 @@ package moe.shizuku.manager.utils
 import android.Manifest.permission.WRITE_SECURE_SETTINGS
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import java.util.concurrent.CopyOnWriteArrayList
@@ -44,7 +45,18 @@ object ShizukuStateMachine {
 
     enum class State { STARTING, RUNNING, STOPPING, STOPPED, CRASHED }
 
+    /**
+     * How long a poll leaves STARTING alone. The same minute `Starter.waitForBinder` waits for the
+     * binder, so a start that is still being waited on is not contradicted by the poll that
+     * asks whether it has finished.
+     */
+    const val STARTING_GRACE_MS = 60_000L
+
     private var state = AtomicReference<State>(State.STOPPED)
+
+    /** When the state last became STARTING, on the elapsed-realtime clock. */
+    @Volatile
+    private var startingSince = 0L
     private val listeners = CopyOnWriteArrayList<(State) -> Unit>()
 
     init {
@@ -65,6 +77,7 @@ object ShizukuStateMachine {
             // Every transition, into the log the phone can read: "why did Shizuku stop" is
             // usually answered by the sequence of these rather than by any one line.
             Diag.info("ShizukuStateMachine", "${oldState.name} -> ${newState.name}")
+            if (newState == State.STARTING) startingSince = SystemClock.elapsedRealtime()
             // A confirmed running server lifts manual-stop suppression, so a
             // later crash is auto-restarted by the watchdog.
             if (newState == State.RUNNING) {
@@ -197,9 +210,26 @@ object ShizukuStateMachine {
         }
     }
 
+    /**
+     * How long the state has been STARTING, or null when it is something else.
+     *
+     * What lets a caller tell a start that is under way from one that was abandoned, which the
+     * state alone cannot: see [STARTING_GRACE_MS].
+     */
+    fun startingAgeMs(): Long? =
+        if (state.get() == State.STARTING) SystemClock.elapsedRealtime() - startingSince else null
+
+    /**
+     * Brings the state in line with the binder.
+     *
+     * A failed ping does not end a start that is still inside [STARTING_GRACE_MS]: the server is
+     * expected to be unreachable then, and calling it STOPPED announced a stop that had not
+     * happened. A start that really failed says so itself, through [markStartFailed].
+     */
     fun update(): State {
-        val state = if (Shizuku.pingBinder()) State.RUNNING else State.STOPPED
-        set(state)
+        val alive = Shizuku.pingBinder()
+        val state = resolvePolledState(get(), alive, startingAgeMs(), STARTING_GRACE_MS)
+        if (state != get()) set(state)
         // Also covers a server that was already running when this process started, or a
         // permission that was revoked behind our back: there is no transition to hook then.
         if (state == State.RUNNING) {
@@ -208,6 +238,22 @@ object ShizukuStateMachine {
             grantHidingAccessIfListsAreInUse()
         }
         return state
+    }
+
+    /**
+     * A start that failed for real: STOPPED, unless the server turns out to be up after all.
+     *
+     * [update] no longer turns a failed ping during STARTING into STOPPED, so the places that know
+     * a start is over say so here instead. Not for a cancelled start, which usually means another
+     * start took over the work.
+     */
+    fun markStartFailed(): State {
+        if (Shizuku.pingBinder()) {
+            set(State.RUNNING)
+            return State.RUNNING
+        }
+        set(State.STOPPED)
+        return State.STOPPED
     }
 
     fun isRunning(): Boolean {

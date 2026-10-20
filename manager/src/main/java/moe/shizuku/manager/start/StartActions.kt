@@ -28,7 +28,8 @@ suspend fun openAdbPortAndStart(context: Context) {
         ShizukuReceiverStarter.start(
             context,
             userInitiated = true,
-            startMethod = ShizukuSettings.StartMethod.USB
+            startMethod = ShizukuSettings.StartMethod.USB,
+            reason = "start-actions"
         )
         return
     }

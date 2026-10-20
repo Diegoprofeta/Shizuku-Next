@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(AppConstants.EXTRA_START_SERVICE_VIA_WADB, false)) {
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .cancel(AdbPairingService.NOTIFICATION_ID)
-            ShizukuReceiverStarter.start(this, forceStart = true, userInitiated = true)
+            ShizukuReceiverStarter.start(this, forceStart = true, userInitiated = true, reason = "wadb-intent")
         }
 
         if (intent.getBooleanExtra(AppConstants.EXTRA_SHOW_PAIRING_DIALOG, false)) {

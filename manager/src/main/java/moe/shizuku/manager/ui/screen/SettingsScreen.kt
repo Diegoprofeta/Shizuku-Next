@@ -1013,7 +1013,7 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
                 PillButton(onClick = {
                     action()
                     restartAction = null
-                    ShizukuReceiverStarter.start(context, forceStart = true, userInitiated = true)
+                    ShizukuReceiverStarter.start(context, forceStart = true, userInitiated = true, reason = "settings")
                 }) { Text(stringResource(android.R.string.ok)) }
             },
             dismissButton = {
