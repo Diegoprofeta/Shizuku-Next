@@ -112,6 +112,7 @@ import moe.shizuku.manager.ui.screen.InstallerScreen
 import moe.shizuku.manager.ui.screen.PowerScreen
 import moe.shizuku.manager.ui.screen.IntentsScreen
 import moe.shizuku.manager.ui.screen.DeviceInfoScreen
+import moe.shizuku.manager.ui.screen.DisplayScreen
 import moe.shizuku.manager.ui.screen.LabsScreen
 import moe.shizuku.manager.ui.screen.LogScreen
 import moe.shizuku.manager.ui.screen.LabsToggleScreen
@@ -165,6 +166,9 @@ enum class Detail(
 
     /** Reboot, recovery, bootloader, power off and the sleep key, through the shell. */
     POWER,
+
+    /** Resolution, density and refresh rate, as the shell changes them. */
+    DISPLAY,
 
     /** The saved wifi networks and their keys, read as the shell. */
     WIFI_PASSWORDS,
@@ -367,6 +371,11 @@ fun ShizukuApp() {
                                 onBack = { detail = null }
                             )
 
+
+                            Detail.DISPLAY -> DisplayScreen(
+                                bottomPadding = 0.dp,
+                                onBack = { detail = null }
+                            )
 
                             Detail.POWER -> PowerScreen(
                                 bottomPadding = 0.dp,
