@@ -2,6 +2,7 @@ package moe.shizuku.manager.utils
 
 import android.util.Log
 import moe.shizuku.manager.ShizukuApplication
+import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -51,38 +52,51 @@ object Diag {
 
     private fun file(): File = File(ShizukuApplication.application.filesDir, FILE_NAME)
 
-    /** Reads the file once per process, dropping whatever is older than the window. */
+    /**
+     * Reads the file once per process, dropping whatever is older than the window.
+     *
+     * Not before the first unlock: the file lives in credential-encrypted storage, which does not
+     * exist yet, and reading it then would find nothing and never look again. The lines said in
+     * the meantime are kept in memory and put after the file's own when it can finally be read.
+     */
     private fun loadLocked() {
-        if (loaded) return
+        if (loaded || !storageReady()) return
         loaded = true
 
-        val f = file()
-        if (!f.exists()) return
+        val earlier = entries.toList()
+        entries.clear()
 
         val cutoff = System.currentTimeMillis() - KEEP_MILLIS
         var pruned = false
-        runCatching {
-            f.forEachLine { line ->
-                val parts = line.split(SEP)
-                if (parts.size < 4) return@forEachLine
-                val at = parts[0].toLongOrNull() ?: return@forEachLine
-                if (at < cutoff) {
-                    pruned = true
-                    return@forEachLine
+        val f = file()
+        if (f.exists()) {
+            runCatching {
+                f.forEachLine { line ->
+                    val parts = line.split(SEP)
+                    if (parts.size < 4) return@forEachLine
+                    val at = parts[0].toLongOrNull() ?: return@forEachLine
+                    if (at < cutoff) {
+                        pruned = true
+                        return@forEachLine
+                    }
+                    entries.addLast(
+                        Entry(at, parts[1].firstOrNull() ?: 'I', parts[2], parts.drop(3).joinToString(""))
+                    )
                 }
-                entries.addLast(
-                    Entry(at, parts[1].firstOrNull() ?: 'I', parts[2], parts.drop(3).joinToString(""))
-                )
             }
         }
+        entries.addAll(earlier)
         while (entries.size > MAX_LINES) {
             entries.removeFirst()
             pruned = true
         }
         // Rewritten rather than left, so a file holding nothing but yesterday is emptied when it
-        // is next opened instead of at some arbitrary point in its growth.
-        if (pruned) runCatching { rewriteLocked() }
+        // is next opened instead of at some arbitrary point in its growth. Also what writes the
+        // lines from before the unlock, which had nowhere to go.
+        if (pruned || earlier.isNotEmpty()) runCatching { rewriteLocked() }
     }
+
+    private fun storageReady(): Boolean = ShizukuApplication.application.isUserUnlockedCompat()
 
     private fun rewriteLocked() {
         val f = file()
@@ -134,7 +148,7 @@ object Diag {
             loadLocked()
             entries.addLast(Entry(at, level, tag, clean))
             while (entries.size > MAX_LINES) entries.removeFirst()
-            runCatching { file().appendText("$at$SEP$level$SEP$tag$SEP$clean\n") }
+            if (loaded) runCatching { file().appendText("$at$SEP$level$SEP$tag$SEP$clean\n") }
         }
     }
 

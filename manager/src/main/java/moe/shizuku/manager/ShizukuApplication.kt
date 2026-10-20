@@ -7,13 +7,17 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import com.topjohnwu.superuser.Shell
 import moe.shizuku.manager.ktx.logd
+import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.manage.Activities
 import moe.shizuku.manager.manage.ForceDark
 import moe.shizuku.manager.manage.Hiding
+import moe.shizuku.manager.receiver.UserUnlockedStarter
 import moe.shizuku.manager.receiver.WatchdogAlarmReceiver
 import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.service.WatchdogService
 import moe.shizuku.manager.utils.AppLocale
+import moe.shizuku.manager.utils.BootTimeline
+import moe.shizuku.manager.utils.Diag
 import moe.shizuku.manager.utils.ShizukuStateMachine
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import rikka.core.util.BuildUtils.atLeast30
@@ -46,6 +50,13 @@ class ShizukuApplication : Application() {
 
     private fun init(context: Context) {
         ShizukuSettings.initialize(context)
+        // The first line of the boot timeline: what woke this process, and whether the user had
+        // unlocked by then. A start cannot begin before this line, so how late it is is how late
+        // everything after it is.
+        Diag.info(
+            "ShizukuApplication",
+            "Process started, ${BootTimeline.sinceBoot()}, user unlocked: ${context.isUserUnlockedCompat()}"
+        )
         // A reboot starts the server's run over: with start on boot off it is down on purpose,
         // and the watchdog must not read that as a crash. The app is started at boot by
         // WorkManager even when the boot receiver is disabled, so this is where it is noticed.
@@ -68,6 +79,9 @@ class ShizukuApplication : Application() {
         AppCompatDelegate.setDefaultNightMode(ShizukuSettings.getNightMode())
 
         if(ShizukuSettings.getWatchdog()) WatchdogService.start(context)
+        // A process that woke before the first unlock has no WorkManager to start with, so the
+        // boot start is made at the unlock and not left for BOOT_COMPLETED to find.
+        UserUnlockedStarter.registerIfLocked(context)
         // Re-armed on every startup as well as at boot, because an update replaces the app and
         // takes its alarms with it: without this a phone that updates while the watchdog is on
         // would lose the backstop until its next reboot, which is exactly the kind of window the

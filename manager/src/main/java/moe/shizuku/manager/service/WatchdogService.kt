@@ -30,12 +30,16 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.MainActivity
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbStarter
+import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
+import moe.shizuku.manager.receiver.StartNowDecision
+import moe.shizuku.manager.receiver.decideStartNow
 import moe.shizuku.manager.receiver.WatchdogAlarmReceiver
 import moe.shizuku.manager.start.runningMethodLabel
 import moe.shizuku.manager.start.runningMethodSuffix
 import moe.shizuku.manager.starter.Starter
 import moe.shizuku.manager.worker.AdbStartWorker
+import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.SettingsPage
 import moe.shizuku.manager.utils.ShizukuStateMachine
@@ -220,9 +224,30 @@ class WatchdogService : Service() {
 
         // The boot gate: start on boot off and no run yet in this boot means the server is down
         // because nobody asked for it, and starting it here would be a boot start by another name.
-        if (!ShizukuSettings.isWatchdogStartAllowed()) {
-            Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
-            return
+        //
+        // And the unlock: every restart here ends in WorkManager or in a direct TCP connection
+        // that a reboot has already taken away, and neither is there before the first unlock. The
+        // process can be this early because the app is direct-boot aware. Waited out rather than
+        // tried; the unlock hook starts the watchdog again, and its probe comes back here.
+        when (decideStartNow(
+            applicationContext.isUserUnlockedCompat(),
+            ShizukuSettings.isWatchdogStartAllowed(),
+            ShizukuSettings.getManuallyStopped()
+        )) {
+            StartNowDecision.START -> Unit
+            StartNowDecision.SKIP_STOPPED -> {
+                Diag.debug(TAG, "Restart attempt skipped: one is expected, or the stop was deliberate")
+                return
+            }
+            StartNowDecision.SKIP_NOT_WANTED -> {
+                Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
+                return
+            }
+            StartNowDecision.DEFER_UNTIL_UNLOCK -> {
+                Diag.debug(TAG, "Restart deferred until the user is unlocked${BootTimeline.suffix()}")
+                pendingRestart = true
+                return
+            }
         }
 
         // The breaker is open, so the last [BREAKER_MAX_ATTEMPTS] starts all failed. Trying

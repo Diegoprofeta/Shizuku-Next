@@ -76,7 +76,10 @@ object ShizukuStateMachine {
         if(oldState != newState) {
             // Every transition, into the log the phone can read: "why did Shizuku stop" is
             // usually answered by the sequence of these rather than by any one line.
-            Diag.info("ShizukuStateMachine", "${oldState.name} -> ${newState.name}")
+            val stamp = if (newState == State.STARTING || newState == State.RUNNING) BootTimeline.suffix() else ""
+            Diag.info("ShizukuStateMachine", "${oldState.name} -> ${newState.name}$stamp")
+            // After the line, so the RUNNING that ends the first start is itself stamped.
+            if (newState == State.RUNNING) BootTimeline.markRunning()
             if (newState == State.STARTING) startingSince = SystemClock.elapsedRealtime()
             // A confirmed running server lifts manual-stop suppression, so a
             // later crash is auto-restarted by the watchdog.

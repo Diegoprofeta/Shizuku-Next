@@ -30,6 +30,7 @@ import moe.shizuku.manager.start.writeGlobalSetting
 import moe.shizuku.manager.starter.Starter
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.ShizukuStateMachine
+import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.Diag
 import moe.shizuku.manager.utils.runShellCommand
 
@@ -161,7 +162,7 @@ object AdbStarter {
             Diag.info(
                 TAG,
                 "Server started over ${if (viaTcp) "the classic (TCP) port" else "the wireless port"}" +
-                    " on port $activePort"
+                    " on port $activePort" + BootTimeline.suffix()
             )
         }
     }

@@ -49,4 +49,16 @@ class StartRequestDecisionTest {
             decideStart(binderAlive = true, forceStart = true, userInitiated = false, startInFlight = false)
         )
     }
+
+    @Test
+    fun `a boot request during a start from the unlock joins it`() {
+        // Unlock comes first and BOOT_COMPLETED a few seconds later, both unattended and unforced.
+        // The second must find the first in flight; so must the binder request and the watchdog.
+        for (forced in listOf(false, true)) {
+            assertEquals(
+                StartDecision.JOIN_IN_FLIGHT,
+                decideStart(binderAlive = false, forceStart = forced, userInitiated = false, startInFlight = true)
+            )
+        }
+    }
 }

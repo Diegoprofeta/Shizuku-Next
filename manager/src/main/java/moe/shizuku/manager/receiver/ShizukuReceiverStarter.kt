@@ -31,6 +31,7 @@ import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.utils.UserHandleCompat
 import moe.shizuku.manager.utils.createChannelCompat
 import moe.shizuku.manager.worker.AdbStartWorker
+import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.Diag
 
 object ShizukuReceiverStarter {
@@ -77,7 +78,8 @@ object ShizukuReceiverStarter {
         // other trace of what replaced it.
         Diag.info(
             AppConstants.TAG,
-            "Start requested by $reason (forced=$forceStart, user=$userInitiated)"
+            "Start requested by $reason (forced=$forceStart, user=$userInitiated)" +
+                BootTimeline.suffix()
         )
 
         // A start request from any entry point clears manual-stop suppression.
