@@ -233,6 +233,8 @@
     <string name="display_invalid">Invalid value</string>
     <string name="display_applied">%1$s applied</string>
     <string name="display_failed">Could not change %1$s</string>
+    <string name="display_hz">%1$d Hz</string>
+    <string name="display_modes_missing">Could not detect supported refresh rates. Enter a value manually.</string>
     <string name="activities_apps_count">%1$d apps</string>
     <string name="activities_count">%1$d activities</string>
     <string name="activities_launcher">Launcher</string>

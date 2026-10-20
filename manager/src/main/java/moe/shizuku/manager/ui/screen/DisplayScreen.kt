@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,6 +99,7 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
     var density by remember { mutableStateOf<DisplayValue?>(null) }
     var minHz by remember { mutableStateOf<String?>(null) }
     var maxHz by remember { mutableStateOf<String?>(null) }
+    var modes by remember { mutableStateOf<List<Int>>(emptyList()) }
 
     var sizeField by remember { mutableStateOf("") }
     var densityField by remember { mutableStateOf("") }
@@ -108,7 +112,7 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 if (ShizukuStateMachine.update() != ShizukuStateMachine.State.RUNNING) {
                     return@withContext null
                 }
-                Quadruple(
+                Readings(
                     parseWm(
                         runShellCommand("wm size"),
                         "Override size: (\\d+x\\d+)",
@@ -120,7 +124,8 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
                         "Physical density: (\\d+)"
                     ),
                     parseSetting(runShellCommand("settings get system min_refresh_rate")),
-                    parseSetting(runShellCommand("settings get system peak_refresh_rate"))
+                    parseSetting(runShellCommand("settings get system peak_refresh_rate")),
+                    parseRefreshRates(runShellCommand("dumpsys display"))
                 )
             }
             running = read != null
@@ -129,6 +134,7 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 density = read.density
                 minHz = read.minHz
                 maxHz = read.maxHz
+                modes = read.modes
                 // Fields start on what is in force, so an apply changes one number rather
                 // than asking for all of it again.
                 if (sizeField.isBlank()) sizeField = read.size.current.orEmpty()
@@ -272,15 +278,21 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 }
 
                 item {
-                    DisplayControl(
+                    RefreshControl(
                         title = stringResource(R.string.display_min_refresh),
                         summary = stringResource(R.string.display_min_refresh_summary),
                         current = minHz,
+                        rates = modes,
                         field = minField,
                         onFieldChange = { minField = it },
-                        keyboardType = KeyboardType.Number,
-                        applyEnabled = running,
-                        onApply = {
+                        enabled = running,
+                        onPick = { rate ->
+                            run(
+                                R.string.display_min_refresh,
+                                "settings put system min_refresh_rate $rate"
+                            )
+                        },
+                        onApplyManual = {
                             applyNumber(
                                 R.string.display_min_refresh,
                                 minField,
@@ -297,15 +309,21 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
                 }
 
                 item {
-                    DisplayControl(
+                    RefreshControl(
                         title = stringResource(R.string.display_max_refresh),
                         summary = stringResource(R.string.display_max_refresh_summary),
                         current = maxHz,
+                        rates = modes,
                         field = maxField,
                         onFieldChange = { maxField = it },
-                        keyboardType = KeyboardType.Number,
-                        applyEnabled = running,
-                        onApply = {
+                        enabled = running,
+                        onPick = { rate ->
+                            run(
+                                R.string.display_max_refresh,
+                                "settings put system peak_refresh_rate $rate"
+                            )
+                        },
+                        onApplyManual = {
                             applyNumber(
                                 R.string.display_max_refresh,
                                 maxField,
@@ -331,13 +349,124 @@ fun DisplayScreen(bottomPadding: Dp, onBack: () -> Unit) {
     }
 }
 
-/** The four readings taken together, so one binder miss cannot leave half the screen stale. */
-private data class Quadruple(
+/** The readings taken together, so one binder miss cannot leave half the screen stale. */
+private data class Readings(
     val size: DisplayValue,
     val density: DisplayValue,
     val minHz: String?,
-    val maxHz: String?
+    val maxHz: String?,
+    val modes: List<Int>
 )
+
+/**
+ * The rates the panel says it can do, from `dumpsys display`.
+ *
+ * Every supported mode is listed with its own `fps=`, so the set is read from the device rather
+ * than guessed: a panel that switches between 60 and 120 is offered those two, and one that only
+ * does 60 is not offered 120. Rounded, because the platform keeps rates as floats and prints
+ * 59.999996 for 60.
+ *
+ * An empty list is a real answer - a ROM that prints modes in another shape, or refuses the
+ * dump - and the screen falls back to a typed value rather than inventing a list.
+ */
+private fun parseRefreshRates(output: String?): List<Int> =
+    output
+        ?.let { text -> Regex("fps=([0-9.]+)").findAll(text) }
+        ?.mapNotNull { it.groupValues[1].toFloatOrNull()?.roundToInt() }
+        ?.filter { it in 1..240 }
+        ?.distinct()
+        ?.sorted()
+        ?.toList()
+        ?: emptyList()
+
+/**
+ * One of the two refresh-rate keys, as the rates the panel reported.
+ *
+ * The numbers come from the display itself, so a preset here is a mode the panel can actually
+ * run; the field is the fallback for a ROM whose dump could not be read, and it is only shown
+ * when there are no rates to offer.
+ */
+@Composable
+private fun RefreshControl(
+    title: String,
+    summary: String,
+    current: String?,
+    rates: List<Int>,
+    field: String,
+    onFieldChange: (String) -> Unit,
+    enabled: Boolean,
+    onPick: (Int) -> Unit,
+    onApplyManual: () -> Unit,
+    onReset: () -> Unit
+) {
+    val currentRate = current?.toFloatOrNull()?.roundToInt()
+
+    SegmentedCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(R.string.display_current, current ?: DEFAULT),
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace
+            )
+
+            if (rates.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.display_modes_missing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                OutlinedTextField(
+                    value = field,
+                    onValueChange = onFieldChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = enabled,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rates.forEach { rate ->
+                        FilterChip(
+                            selected = currentRate == rate,
+                            onClick = { onPick(rate) },
+                            enabled = enabled,
+                            label = { Text(stringResource(R.string.display_hz, rate)) }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (rates.isEmpty()) {
+                    Button(onClick = onApplyManual, enabled = enabled) {
+                        Text(stringResource(R.string.display_apply))
+                    }
+                }
+                TextButton(onClick = onReset, enabled = enabled) {
+                    Text(stringResource(R.string.display_reset))
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun DisplayControl(
