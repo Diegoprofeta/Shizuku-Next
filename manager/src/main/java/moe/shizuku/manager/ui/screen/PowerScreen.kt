@@ -107,6 +107,19 @@ private enum class PowerAction(
         rootOnly = true
     ),
 
+    /**
+     * Kills the process behind the status bar, navigation bar and notification shade; the
+     * platform starts it again on its own, so this is the least destructive way out of an
+     * interface that has stopped drawing. Root only, for the same reason the soft reboot is:
+     * one app cannot kill another app's process, and SystemUI is not this app.
+     */
+    RESTART_SYSTEM_UI(
+        R.string.power_restart_system_ui,
+        R.string.power_restart_system_ui_summary,
+        "pkill -f com.android.systemui",
+        rootOnly = true
+    ),
+
     /** No confirmation: sleeping the display is undone by the power button. */
     SCREEN_OFF(
         R.string.power_screen_off,
