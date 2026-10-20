@@ -109,6 +109,7 @@ import moe.shizuku.manager.ui.screen.HidingScreen
 import moe.shizuku.manager.ui.screen.HomeScreen
 import moe.shizuku.manager.ui.screen.AppToggleFeature
 import moe.shizuku.manager.ui.screen.InstallerScreen
+import moe.shizuku.manager.ui.screen.PowerScreen
 import moe.shizuku.manager.ui.screen.IntentsScreen
 import moe.shizuku.manager.ui.screen.DeviceInfoScreen
 import moe.shizuku.manager.ui.screen.LabsScreen
@@ -161,6 +162,9 @@ enum class Detail(
     DEVICE_INFO,
     FORCE_DARK,
     ACTIVITIES,
+
+    /** Reboot, recovery, bootloader, power off and the sleep key, through the shell. */
+    POWER,
 
     /** The saved wifi networks and their keys, read as the shell. */
     WIFI_PASSWORDS,
@@ -363,6 +367,11 @@ fun ShizukuApp() {
                                 onBack = { detail = null }
                             )
 
+
+                            Detail.POWER -> PowerScreen(
+                                bottomPadding = 0.dp,
+                                onBack = { detail = null }
+                            )
 
                             Detail.LOG -> LogScreen(
                                 bottomPadding = 0.dp,

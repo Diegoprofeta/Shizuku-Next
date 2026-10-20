@@ -197,6 +197,25 @@
     <string name="force_dark_notification_watching">Waiting for an app on the list to open</string>
 
     <string name="tab_activities">Activities Launcher</string>
+    <string name="tab_power">Power</string>
+    <string name="power_description">Restart or turn off the screen without using the phone\'s buttons.</string>
+    <string name="power_needs_shizuku">Start Shizuku first to use these options.</string>
+    <string name="power_reboot">Reboot</string>
+    <string name="power_reboot_summary">Restart the phone.</string>
+    <string name="power_reboot_confirm">The phone will restart now. Unsaved work will be lost.</string>
+    <string name="power_recovery">Reboot to recovery</string>
+    <string name="power_recovery_summary">Restart the phone into recovery mode.</string>
+    <string name="power_recovery_confirm">The phone will restart into recovery mode. Use the volume and power buttons to navigate.</string>
+    <string name="power_bootloader">Reboot to bootloader</string>
+    <string name="power_bootloader_summary">Restart into fastboot mode to connect to a computer.</string>
+    <string name="power_bootloader_confirm">The phone will restart into the bootloader and stay there until you restart it, usually from a computer.</string>
+    <string name="power_off">Power off</string>
+    <string name="power_off_summary">Turn off the phone.</string>
+    <string name="power_off_confirm">The phone will turn off now. Unsaved work will be lost.</string>
+    <string name="power_screen_off">Turn the screen off</string>
+    <string name="power_screen_off_summary">Turn off the screen. If a screen lock is set, the phone will lock too.</string>
+    <string name="power_confirm_title">Are you sure?</string>
+    <string name="power_confirm">Continue</string>
     <string name="activities_apps_count">%1$d apps</string>
     <string name="activities_count">%1$d activities</string>
     <string name="activities_launcher">Launcher</string>
