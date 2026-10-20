@@ -289,7 +289,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             // A candidate that answered is used as it is, except for the USB method: that one is
             // the classic port by promise, and a remembered wireless port is not it. Where nothing
             // answered, the old decision stands and the search takes over.
-            val port = when {
+            var port = when {
                 usbMethod -> tcpPort
                 livePort != null -> livePort
                 useClassicPort -> tcpPort
@@ -455,29 +455,43 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 }
             }
             
-            notify(WorkerState.CONNECTING)
-            // A start that was replaced while it looked for the port stops here. Cancelling the
-            // work does not interrupt the blocking calls below, so without this it went on to
-            // send its own starter, and two starters ran at once.
-            currentCoroutineContext().ensureActive()
-            AdbStarter.startAdb(applicationContext, port, openTcpPort = usbMethod)
-            Starter.waitForBinder()
-            // After the binder, not before: asked for sooner, the server is not there yet and the
-            // line always read zero.
-            AdbStarter.logStartedPids(ShizukuSettings.getLastAdbPort())
-
             // TCP mode promises a classic ADB port, and only a USB start ever opened one: a
             // wireless start, which is what the no-network method is, left TCP mode meaning
             // "keep whatever port there is", and after a reboot with no Wi-Fi there is none,
             // so the unattended restarts the mode exists for had nothing to connect to. The
-            // port can be opened from here because there is now a running server and, with
-            // the no-network start, a hotspot still up to reach adbd over: the same borrow a
-            // USB start makes to repair its own port, and it is best effort either way.
-            if (!usbMethod && ShizukuSettings.getTcpMode() &&
-                EnvironmentUtils.getAdbTcpPort() <= 0
+            // port is opened over the wireless connection, which still needs the no-network
+            // start's hotspot, so it is best effort either way.
+            //
+            // Before the start, not after it: the `tcpip` request restarts adbd, and the server
+            // is a process adbd spawned, so a server started first went down with it. Measured
+            // on the phone: RUNNING at 00:33:09.358, the port opened at 00:33:09.846, CRASHED at
+            // 00:33:10.137 and a watchdog restart nine seconds later.
+            //
+            // Asked of the port itself, not of `service.adb.tcp.port`, which outlives adbd (see
+            // issue #71 above). When the start is already going over the classic port there is
+            // nothing to open.
+            val wanted = ShizukuSettings.getTcpPort()
+            if (!usbMethod && ShizukuSettings.getTcpMode() && port != wanted &&
+                !AdbStarter.isPortListening(wanted)
             ) {
-                val wanted = ShizukuSettings.getTcpPort()
-                AdbStarter.openTcpPort(applicationContext, wanted)
+                // The restart can take down a server left from the previous run. That must read
+                // as part of this start rather than as a crash: STARTING makes the transition on
+                // the binder dying a no-op (see [ShizukuStateMachine.setDead]), where from RUNNING
+                // it is CRASHED, which shows the crash notification and asks the watchdog for a
+                // restart. The watchdog would have been held off anyway ([inFlight] is true for
+                // all of doWork), but the notification and the broadcast would still have gone out.
+                ShizukuStateMachine.set(ShizukuStateMachine.State.STARTING)
+
+                val opened = try {
+                    AdbStarter.openTcpPort(applicationContext, wanted, knownWirelessPort = port)
+                } catch (e: AdbPairingRequiredException) {
+                    throw e
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Diag.warn(AppConstants.TAG, "TCP mode: could not open the classic ADB port", e)
+                    false
+                }
 
                 // What the port says, rather than what that call returned: the call waits for
                 // the port to be listening and gives up if it is not listening yet, and adbd
@@ -500,7 +514,31 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                             if (readBack <= 0) "nothing" else "$readBack"
                     }
                 )
+
+                // adbd restarted, so the wireless port is not known to be alive any more. Keep it
+                // when it is, and otherwise take the classic one; when neither answers, the port
+                // stays and the start reports the failure as it always has.
+                if (opened) {
+                    val chosen = AdbStarter.firstListening(listOf(port, wanted))
+                    Diag.info(
+                        AppConstants.TAG,
+                        "TCP mode: starting over port ${chosen ?: port}" +
+                            if (chosen == null) " (neither $port nor $wanted answers)" else ""
+                    )
+                    if (chosen != null) port = chosen
+                }
             }
+
+            notify(WorkerState.CONNECTING)
+            // A start that was replaced while it looked for the port stops here. Cancelling the
+            // work does not interrupt the blocking calls below, so without this it went on to
+            // send its own starter, and two starters ran at once.
+            currentCoroutineContext().ensureActive()
+            AdbStarter.startAdb(applicationContext, port, openTcpPort = usbMethod)
+            Starter.waitForBinder()
+            // After the binder, not before: asked for sooner, the server is not there yet and the
+            // line always read zero.
+            AdbStarter.logStartedPids(ShizukuSettings.getLastAdbPort())
 
             val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(ShizukuReceiverStarter.NOTIFICATION_ID)
@@ -519,6 +557,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             // connected once more if the server is gone: the same second start, made by the app
             // rather than by the person holding the phone. The watchdog does a check like this for
             // the restarts it makes, but the watchdog is a setting and this has to hold without it.
+            val startedPort = port
             settleScope.launch {
                 delay(START_SETTLE_MS)
                 if (Shizuku.pingBinder()) return@launch
@@ -544,7 +583,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     "The server went away again within ${START_SETTLE_MS / 1000}s; connecting once more"
                 )
                 runCatching {
-                    AdbStarter.startAdb(applicationContext, port, openTcpPort = usbMethod)
+                    AdbStarter.startAdb(applicationContext, startedPort, openTcpPort = usbMethod)
                     Starter.waitForBinder()
                     AdbStarter.logStartedPids(ShizukuSettings.getLastAdbPort())
                 }.onFailure {

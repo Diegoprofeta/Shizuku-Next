@@ -331,8 +331,16 @@ object AdbStarter {
      *
      * Returns false when there is no way to try (no Wi-Fi, or no wireless port found).
      * Throws [AdbPairingRequiredException] when the fallback needs pairing first.
+     *
+     * [knownWirelessPort] is a wireless port the caller already knows. When something is listening
+     * on it, it is used as it is and the mDNS search is skipped: the search has failed (after
+     * its full fifteen seconds) on a phone whose wireless port was answering the whole time.
      */
-    suspend fun openTcpPort(context: Context, port: Int): Boolean = withContext(Dispatchers.IO) {
+    suspend fun openTcpPort(
+        context: Context,
+        port: Int,
+        knownWirelessPort: Int? = null
+    ): Boolean = withContext(Dispatchers.IO) {
         // Wi-Fi is what keeps wireless debugging and with it the wireless port alive, and
         // without it there is usually nothing to borrow. The no-network start is the
         // exception, and the reason it exists: it brings up a local-only hotspot for that
@@ -349,10 +357,12 @@ object AdbStarter {
         // Best effort: without WRITE_SECURE_SETTINGS the write throws, and that must not
         // abort the attempt wireless debugging may already be on.
         context.writeGlobalSetting("adb_wifi_enabled", 1)
-        val wirelessPort = findWirelessPort(context) ?: run {
-            Diag.warn(TAG, "Not opening the ADB port: no wireless debugging port was found")
-            return@withContext false
-        }
+        val wirelessPort = knownWirelessPort?.takeIf { isPortListening(it) }
+            ?: findWirelessPort(context)
+            ?: run {
+                Diag.warn(TAG, "Not opening the ADB port: no wireless debugging port was found")
+                return@withContext false
+            }
 
         val key = AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
 
