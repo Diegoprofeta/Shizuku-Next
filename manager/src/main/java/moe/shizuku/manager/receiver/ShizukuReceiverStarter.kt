@@ -139,6 +139,25 @@ object ShizukuReceiverStarter {
             StartDecision.START, StartDecision.START_LOCKED -> Unit
         }
         val lockedStart = decision == StartDecision.START_LOCKED
+
+        // The one request that gets past a start in flight is a Restart somebody tapped, and it
+        // replaces the start by cancelling it: queued work is replaced by enqueueing over it, but a
+        // start running in the foreground service is not queued work and nothing below would touch
+        // it. Cancelled here, and the new start made once it has really ended - cancelling does not
+        // interrupt the blocking calls in an attempt, so "asked to stop" is not yet "will not send
+        // its starter", and the second starter is the one that kills the first one's server.
+        if (decision == StartDecision.START && LockedBootStartService.isRunning()) {
+            LockedBootStartService.cancelRun("replaced by a restart requested by $reason") {
+                start(
+                    context,
+                    forceStart,
+                    userInitiated,
+                    startMethod,
+                    "$reason (after cancelling the start begun before the unlock)"
+                )
+            }
+            return
+        }
         // A forced start replaces whatever is there, so the binder death on the way is ours,
         // and the watchdog reads a binder death as a crash unless it is told otherwise: it
         // would answer a deliberate Restart with a crash notification and a second start
