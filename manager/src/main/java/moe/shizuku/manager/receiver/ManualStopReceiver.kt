@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.work.WorkManager
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.service.LockedBootStartService
 import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.worker.AdbStartWorker
 import rikka.shizuku.Shizuku
@@ -18,6 +19,8 @@ class ManualStopReceiver : AuthenticatedReceiver() {
         // it, and drop any queued background start.
         ShizukuSettings.setManuallyStopped(true)
         WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+        // And the start the foreground service began before the unlock, if it is still going.
+        LockedBootStartService.cancelRun("stopped by the user") {}
 
         if (!ShizukuStateMachine.isRunning()) return
 

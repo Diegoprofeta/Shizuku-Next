@@ -143,6 +143,7 @@ object Hiding {
     private const val PREF_PAUSED = "hiding_paused"
     private const val PREF_DISABLED = "hiding_disabled_signals"
     private const val PREF_HIDDEN_SINCE = "hiding_since"
+    private const val PREF_RESTART_ON_OPEN = "hiding_restart_on_open"
 
     const val ACTION_RESTORE_HIDING = "moe.shizuku.manager.action.RESTORE_HIDING"
     const val ACTION_RESUME_HIDING = "moe.shizuku.manager.action.RESUME_HIDING"
@@ -302,6 +303,26 @@ object Hiding {
 
     fun setPaused(paused: Boolean) {
         ShizukuSettings.getPreferences().edit().putBoolean(PREF_PAUSED, paused).apply()
+    }
+
+    /**
+     * Whether a listed app is closed and opened again the moment it starts.
+     *
+     * Off by default, because of what it costs: the app is force-stopped, so whatever it had
+     * open is gone. It exists because a hiding list cannot help an app that reads its settings
+     * during startup - the list is applied once the app is already in front, which is after its
+     * first read - and a process that has already looked has to be replaced to look again.
+     *
+     * This is the part of what Geto does by launching the app itself and what SU_IMD calls
+     * auto-hide, without either's detector: the watch already asks which app is in front, and a
+     * restart on the first pass that hides something for a newly opened app is the same answer
+     * from a poll.
+     */
+    fun isRestartOnOpenEnabled(): Boolean =
+        ShizukuSettings.getPreferences().getBoolean(PREF_RESTART_ON_OPEN, false)
+
+    fun setRestartOnOpen(enabled: Boolean) {
+        ShizukuSettings.getPreferences().edit().putBoolean(PREF_RESTART_ON_OPEN, enabled).apply()
     }
 
     // ---- the rule ----------------------------------------------------------------
@@ -571,6 +592,46 @@ object Hiding {
                 forgetOpening()
             }
         return hidden
+    }
+
+    /**
+     * Restarts [packageName] so it starts again with the hidden values.
+     *
+     * The hide has already been applied by the pass that noticed the app, so the app in front is
+     * one that has already read the visible settings; only a new process can read the hidden
+     * ones. Force-stop and start are both done through the shell for two reasons: a stopped app
+     * cannot be launched by this app under the platform's background-activity rules, and the
+     * shell can start it from outside those rules.
+     *
+     * The same hold [openWithHiding] uses is taken first, so the pass after the kill keeps
+     * hiding instead of putting the settings back in the gap before the app is up again.
+     */
+    fun restartForLaunch(packageName: String): Boolean {
+        if (!shellAvailable()) {
+            Diag.warn(TAG, "not restarting $packageName: there is no shell to do it with")
+            return false
+        }
+
+        val component = runCatching {
+            ShizukuApplication.appContext.packageManager
+                .getLaunchIntentForPackage(packageName)?.component
+        }.getOrNull()
+        if (component == null) {
+            Diag.warn(TAG, "not restarting $packageName: it has nothing to launch")
+            return false
+        }
+
+        opening = packageName to System.currentTimeMillis()
+
+        val stopped = PackageTools.forceStop(ShizukuApplication.appContext, packageName)
+        val output = runShellCommand("am start -n ${component.flattenToShortString()}")
+        val started = output != null && !output.contains("Error")
+
+        if (!started) {
+            Diag.warn(TAG, "restart of $packageName did not take: ${output ?: "no shell"}")
+            forgetOpening()
+        }
+        return stopped && started
     }
 
     /** The app a hide-then-open is waiting for, and when it was asked for. */

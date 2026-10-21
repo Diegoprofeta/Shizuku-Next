@@ -56,6 +56,21 @@ object EnvironmentUtils {
     }
 
     /**
+     * The port adbd's wireless (TLS) server listens on, or -1 when the property does not say.
+     *
+     * The platform sets it when the wireless server comes up and clears it with the daemon, and
+     * init resets every `service.*` property at boot, so a value here belongs to this boot - which a
+     * remembered port cannot promise. Whether an app may read it is the platform's and the vendor's
+     * decision (SELinux), and an unreadable property reads as unset, so -1 means "not known" and not
+     * "no wireless server".
+     */
+    fun getAdbTlsPort(): Int = SystemProperties.getInt("service.adb.tls.port", -1)
+
+    /** The platform's count of boots, or -1 where it is not available. */
+    fun getBootCount(): Int =
+        Settings.Global.getInt(appContext.contentResolver, Settings.Global.BOOT_COUNT, -1)
+
+    /**
      * Whether USB debugging is on.
      *
      * Android 17 (SDK 37) redacts `Settings.Global.ADB_ENABLED` to 0 for third-party apps,

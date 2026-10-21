@@ -615,7 +615,7 @@ fun AppsScreen(
                         Button(
                             modifier = Modifier.padding(top = 12.dp),
                             onClick = {
-                                ShizukuReceiverStarter.start(context, userInitiated = true)
+                                ShizukuReceiverStarter.start(context, userInitiated = true, reason = "apps-screen")
                             }
                         ) { Text(stringResource(R.string.action_start)) }
                     }

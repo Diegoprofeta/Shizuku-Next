@@ -22,18 +22,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.shizuku.manager.R
 import moe.shizuku.manager.MainActivity
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbStarter
+import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
+import moe.shizuku.manager.receiver.StartNowDecision
+import moe.shizuku.manager.receiver.decideStartNow
 import moe.shizuku.manager.receiver.WatchdogAlarmReceiver
 import moe.shizuku.manager.start.runningMethodLabel
 import moe.shizuku.manager.start.runningMethodSuffix
 import moe.shizuku.manager.starter.Starter
+import moe.shizuku.manager.start.AdbStartRun
 import moe.shizuku.manager.worker.AdbStartWorker
+import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.SettingsPage
 import moe.shizuku.manager.utils.ShizukuStateMachine
@@ -218,9 +225,32 @@ class WatchdogService : Service() {
 
         // The boot gate: start on boot off and no run yet in this boot means the server is down
         // because nobody asked for it, and starting it here would be a boot start by another name.
-        if (!ShizukuSettings.isWatchdogStartAllowed()) {
-            Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
-            return
+        //
+        // And the unlock: every restart here ends in WorkManager or in a direct TCP connection
+        // that a reboot has already taken away, and neither is there before the first unlock. The
+        // process can be this early because the app is direct-boot aware. Waited out rather than
+        // tried; the unlock hook starts the watchdog again, and its probe comes back here.
+        when (decideStartNow(
+            applicationContext.isUserUnlockedCompat(),
+            ShizukuSettings.isWatchdogStartAllowed(),
+            ShizukuSettings.getManuallyStopped()
+        )) {
+            StartNowDecision.START -> Unit
+            StartNowDecision.SKIP_STOPPED -> {
+                Diag.debug(TAG, "Restart attempt skipped: one is expected, or the stop was deliberate")
+                return
+            }
+            StartNowDecision.SKIP_NOT_WANTED -> {
+                Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
+                return
+            }
+            // The watchdog does not ask for the start that can be made before the unlock (it passes
+            // no such method), so START_LOCKED is not an answer it gets; it waits like the rest.
+            StartNowDecision.DEFER_UNTIL_UNLOCK, StartNowDecision.START_LOCKED -> {
+                Diag.debug(TAG, "Restart deferred until the user is unlocked${BootTimeline.suffix()}")
+                pendingRestart = true
+                return
+            }
         }
 
         // The breaker is open, so the last [BREAKER_MAX_ATTEMPTS] starts all failed. Trying
@@ -246,9 +276,11 @@ class WatchdogService : Service() {
         // thirty seconds and forces a start by cancelling the queued work. The attempt in flight
         // was therefore thrown away thirty seconds in, time after time, and the window it needed
         // never arrived. Waited on rather than replaced, with the retry left armed for its end.
-        // Only on the platform that needs it: a release whose wireless server still comes up is
-        // answered by its own attempts, and its retries keep the schedule they had.
-        if (EnvironmentUtils.isAdbWifiOverhauled() && AdbStartWorker.inFlight) {
+        // On every release, not only the one that needs the longest window: at a boot the boot
+        // receiver's start and this one arrive within seconds of each other, and the second one
+        // replacing the first is what put two starters on the phone, the later one killing the
+        // earlier one's server. A start still inside its STARTING grace counts the same.
+        if (AdbStartRun.startInProgress()) {
             Diag.debug(TAG, "Restart attempt skipped: a start is already in flight")
             pendingRestart = true
             return
@@ -284,16 +316,29 @@ class WatchdogService : Service() {
                     pendingRestart = false
                     AdbStarter.startAdb(applicationContext, tcpPort)
                     Starter.waitForBinder()
+                    AdbStarter.logStartedPids(tcpPort)
                 } else {
                     // mDNS-based restart via WorkManager. Mark pending so the
                     // screen-on receiver can retry if this attempt fails.
                     pendingRestart = true
-                    ShizukuReceiverStarter.start(applicationContext, forceStart = true)
+                    ShizukuReceiverStarter.start(
+                        applicationContext,
+                        forceStart = true,
+                        reason = "watchdog-restart"
+                    )
                 }
             } catch (e: Exception) {
                 Diag.warn(TAG, "Direct restart failed, falling back", e)
                 pendingRestart = true
-                ShizukuReceiverStarter.start(applicationContext, forceStart = true)
+                // The direct start left the state at STARTING, and a start inside its grace is
+                // one the fallback would be told it can join. It has failed, so it is said so.
+                if (ShizukuStateMachine.markStartFailed() != ShizukuStateMachine.State.RUNNING) {
+                    ShizukuReceiverStarter.start(
+                        applicationContext,
+                        forceStart = true,
+                        reason = "watchdog-fallback"
+                    )
+                }
             } finally {
                 restartInFlight.set(false)
             }
@@ -301,7 +346,19 @@ class WatchdogService : Service() {
             // A start reports success as soon as the binder appears, and the interesting case
             // is the one that appears and then goes away again, so the restart is checked
             // rather than trusted: until the server is actually there, the retry stays armed.
+            //
+            // Counted from when the start ends, not from when it was asked for: through the
+            // worker the request returns at once, and at a boot finding the port takes several
+            // seconds, the start itself a few more, and the server another handful to answer.
+            // A fixed wait from the request judged all of that too early and called a server
+            // that was seconds from appearing a failure.
             delay(RECOVERY_CHECK_MS)
+            awaitStartEnd()
+            // And then the server's own time to come up, which the log puts at 6 to 12 seconds
+            // after the starter reports it started.
+            withTimeoutOrNull(SERVER_BOOT_GRACE_MS) {
+                ShizukuStateMachine.asFlow().first { it == ShizukuStateMachine.State.RUNNING }
+            }
             ShizukuStateMachine.update()
             if (ShizukuStateMachine.isRunning()) {
                 pendingRestart = false
@@ -309,6 +366,23 @@ class WatchdogService : Service() {
                 Diag.warn(TAG, "Restart did not bring the server back, leaving the retry armed")
                 pendingRestart = true
             }
+        }
+    }
+
+    /**
+     * Waits for the start in progress to end, one second at a time, up to a limit.
+     *
+     * The limit is the longest a start is allowed to take: a no-network start is given
+     * the worker's forced-discovery timeout to find a port, so it gets more than the rest.
+     */
+    private suspend fun awaitStartEnd() {
+        val limit =
+            if (ShizukuSettings.getForceWirelessDebugging()) FORCED_IN_FLIGHT_GRACE_MS
+            else IN_FLIGHT_GRACE_MS
+        var waited = 0L
+        while (waited < limit && AdbStartRun.startInProgress()) {
+            delay(START_END_POLL_MS)
+            waited += START_END_POLL_MS
         }
     }
 
@@ -364,7 +438,8 @@ class WatchdogService : Service() {
             ShizukuReceiverStarter.start(
                 applicationContext,
                 forceStart = true,
-                userInitiated = true
+                userInitiated = true,
+                reason = "watchdog-notification"
             )
             return START_STICKY
         }
@@ -583,6 +658,15 @@ class WatchdogService : Service() {
         private const val BINDER_GRACE_MS = 3000L
         private const val IN_FLIGHT_GRACE_MS = 90_000L
 
+        /** Longer for the no-network start, which searches for its port for up to 130 seconds. */
+        private const val FORCED_IN_FLIGHT_GRACE_MS = 140_000L
+
+        /** How often a restart looks again at whether the start it made has ended. */
+        private const val START_END_POLL_MS = 1_000L
+
+        /** How long the server gets to answer after its start reports done. */
+        private const val SERVER_BOOT_GRACE_MS = 20_000L
+
         /** Long enough for a wireless start to have got somewhere, short enough to be news. */
         private const val RECOVERY_CHECK_MS = 15_000L
 
@@ -662,8 +746,25 @@ class WatchdogService : Service() {
                 // only exists from Android 8 (API 26), and a NoSuchMethodError is an Error the
                 // catch below cannot see. The compat helper falls back to startService on the
                 // platforms that predate it.
-                ContextCompat.startForegroundService(context, Intent(context, WatchdogService::class.java))
-                true
+                val started = ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, WatchdogService::class.java)
+                )
+                // Null is the platform saying there is no such service to start: this one is not
+                // direct-boot aware, so before the first unlock the process cannot see it ("Unable to
+                // start service ... U=0: not found"), and the call returns instead of throwing. Taking
+                // that for a start is how the alarm backstop and the log reported a watchdog that was
+                // never there.
+                if (started == null) {
+                    Diag.warn(
+                        "ShizukuApplication",
+                        "WatchdogService was not started: the platform did not find it" +
+                            if (context.isUserUnlockedCompat()) "" else " (the user has not unlocked yet)"
+                    )
+                    false
+                } else {
+                    true
+                }
             } catch (e: Exception) {
                 // ForegroundServiceStartNotAllowedException on Android 12+, which is an ordinary
                 // outcome for a background caller rather than an error in this app.

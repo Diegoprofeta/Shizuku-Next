@@ -30,7 +30,11 @@ import moe.shizuku.manager.utils.SettingsPage
 import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.utils.UserHandleCompat
 import moe.shizuku.manager.utils.createChannelCompat
+import moe.shizuku.manager.ktx.isUserUnlockedCompat
+import moe.shizuku.manager.service.LockedBootStartService
+import moe.shizuku.manager.start.AdbStartRun
 import moe.shizuku.manager.worker.AdbStartWorker
+import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.Diag
 
 object ShizukuReceiverStarter {
@@ -60,13 +64,27 @@ object ShizukuReceiverStarter {
      * from another app's intent, from the pairing flow or from a boot is nobody's tap and waits for
      * the network - which is what the unattended starts have to do, since Wi-Fi routinely arrives a
      * few seconds after they try.
+     *
+     * [reason] names the entry point, for the log only.
+     *
+     * One start at a time: a request that arrives while another is under way joins it instead of
+     * queueing its own, unless it is a Restart somebody tapped. See [decideStart].
      */
     fun start(
         context: Context,
         forceStart: Boolean = false,
         userInitiated: Boolean = false,
-        @ShizukuSettings.StartMethod startMethod: Int = ShizukuSettings.getStartMethod()
+        @ShizukuSettings.StartMethod startMethod: Int = ShizukuSettings.getStartMethod(),
+        reason: String = "unspecified"
     ) {
+        // Who asked, written down for every request: a server replaced out of the blue has no
+        // other trace of what replaced it.
+        Diag.info(
+            AppConstants.TAG,
+            "Start requested by $reason (forced=$forceStart, user=$userInitiated)" +
+                BootTimeline.suffix()
+        )
+
         // A start request from any entry point clears manual-stop suppression.
         ShizukuSettings.setManuallyStopped(false)
         // And it ends the watchdog's boot gate: a server asked for is a server worth keeping
@@ -78,10 +96,66 @@ object ShizukuReceiverStarter {
         // left the belief behind, and a start was then ignored in silence: a tap that does
         // nothing at all, until a reboot resets the belief. The refusal is also said out
         // loud now, because a tap that quietly does nothing is the worst of the two.
-        val wasRunning = UserHandleCompat.myUserId() > 0 ||
+        // Asked before anything is marked or queued: a request that is only joining a start
+        // must leave the watchdog's guard, the running method and the status card as that start
+        // set them.
+        val inFlightAgeMs = AdbStartRun.inFlightAgeMs()
+            ?: ShizukuStateMachine.startingAgeMs()?.takeIf { it < ShizukuStateMachine.STARTING_GRACE_MS }
+        val binderAlive = UserHandleCompat.myUserId() > 0 ||
             ShizukuStateMachine.update() == ShizukuStateMachine.State.RUNNING
-        if (wasRunning && !forceStart) {
-            Diag.info(AppConstants.TAG, "Start ignored: the service is already running")
+        // Before the first unlock nothing below may touch WorkManager: its database is in storage
+        // that cannot be read yet, and asking for it takes the process down. A wireless start is
+        // made in the foreground service instead; any other waits for the unlock to ask again.
+        val userUnlocked = context.isUserUnlockedCompat()
+        val decision = decideStart(
+            binderAlive,
+            forceStart,
+            userInitiated,
+            startInFlight = inFlightAgeMs != null,
+            userUnlocked = userUnlocked,
+            canStartLocked = canStartBeforeUnlock(startMethod)
+        )
+        when (decision) {
+            StartDecision.IGNORE_RUNNING -> {
+                Diag.info(AppConstants.TAG, "Start ignored: the service is already running")
+                return
+            }
+            StartDecision.JOIN_IN_FLIGHT -> {
+                Diag.info(
+                    AppConstants.TAG,
+                    "Start requested by $reason joined the one already in flight " +
+                        "(${(inFlightAgeMs ?: 0L) / 1000} s old)"
+                )
+                return
+            }
+            StartDecision.DEFER_UNTIL_UNLOCK -> {
+                Diag.info(
+                    AppConstants.TAG,
+                    "Start requested by $reason deferred: the user has not unlocked yet and " +
+                        "method $startMethod cannot start before that" + BootTimeline.suffix()
+                )
+                return
+            }
+            StartDecision.START, StartDecision.START_LOCKED -> Unit
+        }
+        val lockedStart = decision == StartDecision.START_LOCKED
+
+        // The one request that gets past a start in flight is a Restart somebody tapped, and it
+        // replaces the start by cancelling it: queued work is replaced by enqueueing over it, but a
+        // start running in the foreground service is not queued work and nothing below would touch
+        // it. Cancelled here, and the new start made once it has really ended - cancelling does not
+        // interrupt the blocking calls in an attempt, so "asked to stop" is not yet "will not send
+        // its starter", and the second starter is the one that kills the first one's server.
+        if (decision == StartDecision.START && LockedBootStartService.isRunning()) {
+            LockedBootStartService.cancelRun("replaced by a restart requested by $reason") {
+                start(
+                    context,
+                    forceStart,
+                    userInitiated,
+                    startMethod,
+                    "$reason (after cancelling the start begun before the unlock)"
+                )
+            }
             return
         }
         // A forced start replaces whatever is there, so the binder death on the way is ours,
@@ -104,7 +178,10 @@ object ShizukuReceiverStarter {
         // asks for root on a device without it falls back to wireless debugging instead of
         // failing silently. The setting stays Root, so root coming back restores the method
         // on the next start without the user having to pick it again.
-        val method = StartMethodGuard.resolve(startMethod)
+        //
+        // Not asked before the unlock: probing root spawns a shell, and the method is a wireless one
+        // already (that is what [canStartBeforeUnlock] says), which the guard would not change.
+        val method = if (lockedStart) startMethod else StartMethodGuard.resolve(startMethod)
 
         StartStatusReporter.starting()
 
@@ -116,7 +193,7 @@ object ShizukuReceiverStarter {
         when (method) {
             ShizukuSettings.StartMethod.ROOT -> rootStart(context)
             ShizukuSettings.StartMethod.SYSTEM -> systemStart(context)
-            else -> adbStart(context, userInitiated, method)
+            else -> adbStart(context, userInitiated, method, lockedStart)
         }
     }
 
@@ -147,7 +224,12 @@ object ShizukuReceiverStarter {
         }
     }
 
-    private fun adbStart(context: Context, userInitiated: Boolean, startMethod: Int) {
+    private fun adbStart(
+        context: Context,
+        userInitiated: Boolean,
+        startMethod: Int,
+        lockedStart: Boolean = false
+    ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R
             && !EnvironmentUtils.isTelevision()
             && EnvironmentUtils.getAdbTcpPort() <= 0
@@ -209,6 +291,26 @@ object ShizukuReceiverStarter {
         // User-initiated starts never wait for Wi-Fi; unattended background restarts
         // honour the "wait for Wi-Fi" setting.
         val immediate = userInitiated || !ShizukuSettings.getWaitForWifi()
+
+        if (lockedStart) {
+            // The service does not wait for a network the way the queued work does: it makes one
+            // attempt. So a start that needs Wi-Fi, has none yet and is meant to wait for it is
+            // left for the unlock, where the queued work's own constraint takes over. Wi-Fi
+            // routinely associates a few seconds after the boot that started this.
+            if (needsNetwork && !immediate && !hasWifi && !television) {
+                StartStatusReporter.clear()
+                Diag.info(
+                    AppConstants.TAG,
+                    "Start before the unlock left for the unlock: it needs Wi-Fi and there is none yet"
+                )
+                return
+            }
+            if (!LockedBootStartService.start(context, startMethod)) {
+                StartStatusReporter.clear()
+            }
+            return
+        }
+
         AdbStartWorker.enqueue(context, startMethod = startMethod, immediate = immediate)
         // "Waiting for Wi-Fi" only when there is a wait: a start that goes ahead without one
         // would say it was waiting for a network it does not use, which is the line the user
@@ -238,8 +340,13 @@ object ShizukuReceiverStarter {
      * server the platform took away again, both run after the binder appears.
      */
     fun onServerRunning(context: Context) {
-        if (AdbStartWorker.inFlight) return
-        WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+        if (AdbStartRun.inFlight) return
+        // Nothing can be queued before the unlock, and asking WorkManager for its instance then is
+        // an exception (a process that woke without credential storage has none). The notification
+        // is still ours to take down.
+        if (context.isUserUnlockedCompat()) {
+            WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+        }
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(NOTIFICATION_ID)
     }
@@ -326,7 +433,7 @@ object ShizukuReceiverStarter {
             Diag.warn(AppConstants.TAG, "Root was revoked before the start could use it")
             Shell.getCachedShell()?.close()
             StartStatusReporter.failed(context.getString(R.string.start_failed_root_unavailable))
-            ShizukuStateMachine.update()
+            ShizukuStateMachine.markStartFailed()
             return
         }
 
@@ -335,7 +442,7 @@ object ShizukuReceiverStarter {
             Shell.cmd(Starter.internalCommand).exec()
         } catch (e: Exception) {
             Diag.error(AppConstants.TAG, "Failed to start Shizuku with root", e)
-            ShizukuStateMachine.update()
+            ShizukuStateMachine.markStartFailed()
         }
     }
 

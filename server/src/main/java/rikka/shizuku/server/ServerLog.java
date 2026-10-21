@@ -1,6 +1,7 @@
 package rikka.shizuku.server;
 
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.File;
@@ -43,9 +44,36 @@ public class ServerLog {
     };
 
     private static File file;
-    private static boolean resolved;
 
+    /** Whether the last attempt to write the file failed, so that a failure is said once and not at every line. */
+    private static boolean writeFailed;
+
+    /** When this class was first used, which is the first line of [main]: the zero of [phase]. */
+    private static final long STARTED_AT = SystemClock.uptimeMillis();
+
+    /**
+     * A line saying how far into start-up the server is, in milliseconds since it entered main.
+     *
+     * Where the eleven seconds from the starter's exec to the first binder go is a question about
+     * phases, and the manager's log only has wall-clock time for the lines it writes itself. One
+     * short line per phase is the measurement.
+     */
+    public static void phase(String what) {
+        mark("+" + (SystemClock.uptimeMillis() - STARTED_AT) + " ms " + what);
+    }
+
+    /**
+     * Says [message] in the logcat, and appends it to the manager's file when the file can be
+     * reached.
+     *
+     * The logcat first and always: a server started before the first unlock cannot write the file
+     * (the storage it lives in is not there yet), and this used to return before logging at all,
+     * so such a server left no account of itself anywhere. The file is tried again at the next
+     * line rather than given up on, since the same server can reach it a minute later.
+     */
     public static void mark(String message) {
+        Log.i(TAG, message);
+
         try {
             File target = target();
             if (target == null) {
@@ -56,19 +84,27 @@ public class ServerLog {
                 writer.write(new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
                         .format(new Date()) + " server(" + Process.myPid() + "): " + message + "\n");
             }
-
-            Log.i(TAG, message);
+            writeFailed = false;
         } catch (Throwable tr) {
-            Log.w(TAG, "Couldn't append to the manager's log", tr);
+            if (!writeFailed) {
+                writeFailed = true;
+                Log.w(TAG, "Couldn't append to the manager's log; will try again", tr);
+            }
         }
     }
 
-    /** The manager's log file, whichever of the two it was the starter managed to write. */
-    private static File target() {
-        if (resolved) {
+    /**
+     * The manager's log file, whichever of the two it was the starter managed to write, or null
+     * when neither can be reached yet.
+     *
+     * Only a file that was reached is remembered. A directory that cannot be made now (the storage
+     * is locked until the first unlock) is not a decision, and remembering it as one left a server
+     * started in that window without a file for the rest of its life.
+     */
+    private static synchronized File target() {
+        if (file != null) {
             return file;
         }
-        resolved = true;
 
         String pkg = ShizukuService.MANAGER_APPLICATION_ID;
         if (pkg == null || pkg.isEmpty()) {
@@ -87,9 +123,13 @@ public class ServerLog {
 
         File media = new File(String.format(Locale.US, DIRECTORIES[0], pkg), "starter.log");
         File parent = media.getParentFile();
-        if (parent != null) {
-            //noinspection ResultOfMethodCallIgnored
-            parent.mkdirs();
+        if (parent == null) {
+            return null;
+        }
+        //noinspection ResultOfMethodCallIgnored
+        parent.mkdirs();
+        if (!parent.isDirectory()) {
+            return null;
         }
         file = media;
         return file;

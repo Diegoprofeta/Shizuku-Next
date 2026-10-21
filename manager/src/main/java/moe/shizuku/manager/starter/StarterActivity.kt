@@ -262,7 +262,8 @@ class ViewModel(application: Application) : AndroidViewModel(application) {
     var agentStopped: (() -> Boolean)? = null
 
     private val handler = CoroutineExceptionHandler { _, throwable ->
-        ShizukuStateMachine.update()
+        // The start died with an exception, and the poll no longer ends a STARTING on its own.
+        ShizukuStateMachine.markStartFailed()
         log(error = throwable)
     }
 
