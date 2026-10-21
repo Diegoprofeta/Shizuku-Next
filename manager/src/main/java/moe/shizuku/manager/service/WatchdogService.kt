@@ -38,6 +38,7 @@ import moe.shizuku.manager.receiver.WatchdogAlarmReceiver
 import moe.shizuku.manager.start.runningMethodLabel
 import moe.shizuku.manager.start.runningMethodSuffix
 import moe.shizuku.manager.starter.Starter
+import moe.shizuku.manager.start.AdbStartRun
 import moe.shizuku.manager.worker.AdbStartWorker
 import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.EnvironmentUtils
@@ -277,7 +278,7 @@ class WatchdogService : Service() {
         // receiver's start and this one arrive within seconds of each other, and the second one
         // replacing the first is what put two starters on the phone, the later one killing the
         // earlier one's server. A start still inside its STARTING grace counts the same.
-        if (AdbStartWorker.startInProgress()) {
+        if (AdbStartRun.startInProgress()) {
             Diag.debug(TAG, "Restart attempt skipped: a start is already in flight")
             pendingRestart = true
             return
@@ -377,7 +378,7 @@ class WatchdogService : Service() {
             if (ShizukuSettings.getForceWirelessDebugging()) FORCED_IN_FLIGHT_GRACE_MS
             else IN_FLIGHT_GRACE_MS
         var waited = 0L
-        while (waited < limit && AdbStartWorker.startInProgress()) {
+        while (waited < limit && AdbStartRun.startInProgress()) {
             delay(START_END_POLL_MS)
             waited += START_END_POLL_MS
         }

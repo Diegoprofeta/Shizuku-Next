@@ -30,6 +30,7 @@ import moe.shizuku.manager.utils.SettingsPage
 import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.utils.UserHandleCompat
 import moe.shizuku.manager.utils.createChannelCompat
+import moe.shizuku.manager.start.AdbStartRun
 import moe.shizuku.manager.worker.AdbStartWorker
 import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.Diag
@@ -96,7 +97,7 @@ object ShizukuReceiverStarter {
         // Asked before anything is marked or queued: a request that is only joining a start
         // must leave the watchdog's guard, the running method and the status card as that start
         // set them.
-        val inFlightAgeMs = AdbStartWorker.inFlightAgeMs()
+        val inFlightAgeMs = AdbStartRun.inFlightAgeMs()
             ?: ShizukuStateMachine.startingAgeMs()?.takeIf { it < ShizukuStateMachine.STARTING_GRACE_MS }
         val binderAlive = UserHandleCompat.myUserId() > 0 ||
             ShizukuStateMachine.update() == ShizukuStateMachine.State.RUNNING
@@ -269,7 +270,7 @@ object ShizukuReceiverStarter {
      * server the platform took away again, both run after the binder appears.
      */
     fun onServerRunning(context: Context) {
-        if (AdbStartWorker.inFlight) return
+        if (AdbStartRun.inFlight) return
         WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(NOTIFICATION_ID)
