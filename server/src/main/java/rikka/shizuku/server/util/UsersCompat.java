@@ -114,6 +114,31 @@ public final class UsersCompat {
         return Collections.singletonList(0);
     }
 
+    /**
+     * Whether the user's credential-encrypted storage is available, i.e. the user has unlocked since
+     * boot; null when the platform cannot be asked.
+     *
+     * Asked of the user manager rather than inferred from what the package manager shows, because
+     * what it shows is the thing that changes: before the first unlock only the apps that are
+     * direct-boot aware are listed, and everything else reads as uninstalled. A server started
+     * before the unlock (the manager does that, to have the server up when the PIN is typed) must
+     * know which of the two it is looking at.
+     */
+    public static Boolean isUserUnlocked(int userId) {
+        Object um = userManager();
+        if (um == null) {
+            return null;
+        }
+        try {
+            Method method = um.getClass().getMethod("isUserUnlocked", int.class);
+            Object result = method.invoke(um, userId);
+            return result instanceof Boolean ? (Boolean) result : null;
+        } catch (Throwable tr) {
+            Log.w(TAG, "could not ask whether user " + userId + " is unlocked", tr);
+            return null;
+        }
+    }
+
     /** Every overload of [name], whatever its parameters: the shapes are tried, not guessed. */
     private static List<Method> overloads(Object target, String name) {
         List<Method> found = new ArrayList<>();
