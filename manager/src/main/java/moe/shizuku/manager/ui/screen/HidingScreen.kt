@@ -90,6 +90,7 @@ fun HidingScreen(
     val scope = rememberCoroutineScope()
 
     var rows by remember { mutableStateOf<List<ModeRow>>(emptyList()) }
+    var restartOnOpen by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
 
     // Read whenever this screen is come back to. The switches here are not the only place a mode
@@ -98,6 +99,7 @@ fun HidingScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
 
     LaunchedEffect(refresh) {
+        restartOnOpen = Hiding.isRestartOnOpenEnabled()
         rows = withContext(Dispatchers.IO) {
             // The first screen most people reach hiding from, so the two grants it needs are asked
             // for here and not left to a settings page somebody has to go and find. Nothing is
@@ -218,6 +220,31 @@ fun HidingScreen(
                     )
                 }
             }
+
+                item {
+                    SegmentedCard {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.hiding_restart_on_open)) },
+                            supportingContent = {
+                                Text(stringResource(R.string.hiding_restart_on_open_summary))
+                            },
+                            trailingContent = {
+                                ExpressiveSwitch(
+                                    checked = restartOnOpen,
+                                    onCheckedChange = { checked ->
+                                        restartOnOpen = checked
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                Hiding.setRestartOnOpen(checked)
+                                            }
+                                            refresh++
+                                        }
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
             }
 
             ScrollToTopButton(

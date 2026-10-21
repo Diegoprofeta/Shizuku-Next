@@ -307,6 +307,14 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     awaitClose { }
                     return@callbackFlow
                 }
+
+                // Before anything asks for the hotspot. A local-only hotspot is a request the
+                // platform may refuse outright to an app that is only a background worker, and
+                // on the phone that reported this the refusal came back as ERROR_INCOMPATIBLE_MODE
+                // on a start that had no reason to fail. The call resumes once the worker is
+                // actually in the foreground, which is the state the request is gated on.
+                if (forcedWireless) promoteForHotspot()
+
                 val adbMdns = AdbMdns(applicationContext, AdbMdns.TLS_CONNECT) { p ->
                     if (p.second > 0) trySend(p.second)
                 }
@@ -415,20 +423,33 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 // not write, discovery still gets its chance before we complain.
                 applicationContext.writeGlobalSetting("adb_wifi_enabled", 1)
                 cr.registerContentObserver(Settings.Global.getUriFor("adb_wifi_enabled"), false, observer)
-                startDiscoveryWithTimeout()
 
                 // Opt-in, and only when there is no port to fall back on: keep asking for
                 // wireless debugging the way the Settings toggle cannot be asked when the
                 // device has no network, and bring up an interface for discovery if
                 // asking is not enough on its own. Cancelled with this flow, because it
                 // is only worth doing while something is trying to discover the port.
+                //
+                // Discovery waits for the hotspot in this case, and that ordering is the
+                // difference between a start and a timeout: a request registered before the
+                // interface exists is kept by NsdManager with nothing to query on, so it sits
+                // there silently while the port is being advertised next to it. The callback
+                // fires when the hotspot attempt is over, whether it came up or not - the
+                // latter keeps the discovery attempt a start without a hotspot always had.
                 if (forcedWireless) {
                     notify(WorkerState.FORCING_WIRELESS)
                     nudgeJob = launch {
-                        ForcedWirelessDebugging.nudge(applicationContext) { message ->
-                            Diag.info(AppConstants.TAG, "Forced wireless debugging: $message")
+                        ForcedWirelessDebugging.nudge(
+                            applicationContext,
+                            { message ->
+                                Diag.info(AppConstants.TAG, "Forced wireless debugging: $message")
+                            }
+                        ) {
+                            startDiscoveryWithTimeout()
                         }
                     }
+                } else {
+                    startDiscoveryWithTimeout()
                 }
 
                 awaitClose {
@@ -669,6 +690,41 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 return Result.retry()
             }
         }
+    }
+
+    /**
+     * Puts this attempt in the foreground before it can ask for the hotspot.
+     *
+     * Android 12 gated the local-only hotspot behind the app being in the foreground, and a
+     * WorkManager worker answering a start intent is not. Promoting here rather than leaving it
+     * to the locked-screen path is what makes an unlocked offline start possible: the request
+     * that used to come back as an incompatible mode is made by an app the platform can see.
+     *
+     * The failure is logged rather than thrown. A promotion the platform refuses means the
+     * hotspot is likely to be refused too, and the start still gets to try and to report what
+     * happened, which is more useful than an exception for a start that may yet work over an
+     * existing port.
+     */
+    private suspend fun promoteForHotspot() {
+        val notification = ShizukuReceiverStarter.buildNotification(
+            applicationContext,
+            null,
+            requestedMethod
+        )
+        val info = if (Build.VERSION.SDK_INT >= 34) {
+            ForegroundInfo(
+                ShizukuReceiverStarter.NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            ForegroundInfo(ShizukuReceiverStarter.NOTIFICATION_ID, notification)
+        }
+
+        runCatching { setForeground(info) }
+            .onFailure {
+                Diag.warn(AppConstants.TAG, "could not promote the start before the hotspot", it)
+            }
     }
 
     private fun showErrorNotification(context: Context, e: Exception) {

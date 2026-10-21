@@ -99,7 +99,17 @@ object ForcedWirelessDebugging {
      */
     suspend fun nudge(
         context: Context,
-        log: (String) -> Unit = {}
+        log: (String) -> Unit = {},
+        /**
+         * Called once the hotspot attempt is over, whether it came up or not.
+         *
+         * The caller uses it to wait before asking for discovery: a request registered before
+         * the interface exists is one NsdManager keeps without ever sending a query on it, which
+         * is how an offline start sat out its whole deadline on a phone whose port was there.
+         * Called after a failure as well, because a start that could not have a hotspot still
+         * gets the discovery attempt it would have had anyway.
+         */
+        onHotspotSettled: () -> Unit = {}
     ) = withContext(Dispatchers.IO) {
         val cr = context.contentResolver
 
@@ -108,6 +118,7 @@ object ForcedWirelessDebugging {
         // daemon keep its port, so there is nothing to gain by spending the first seconds
         // of an attempt that may be short asking without one.
         startHotspot(context, log)
+        onHotspotSettled()
 
         // Every pass reads before it writes, which is the whole of what issue #79 needed: a write
         // of 1 while the setting already reads 1 does nothing to the daemon (SettingsProvider does

@@ -2,6 +2,7 @@ package moe.shizuku.manager.ui.screen
 
 import android.content.Context
 import android.content.pm.PackageInfo
+import android.os.Process
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -82,6 +83,7 @@ import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.ui.component.ScrollToTopButton
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
+import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.manage.InstalledPackages
 import moe.shizuku.manager.manage.Logcat
 import moe.shizuku.manager.ui.component.AppFilterChip
@@ -292,6 +294,7 @@ private fun AppLogTab(bottomPadding: Dp) {
             IconButton(
                 onClick = {
                     Diag.clear()
+                    setPulledUpTo(0L)
                     version++
                     Toast.makeText(context, context.getString(R.string.log_cleared), Toast.LENGTH_SHORT).show()
                 }
@@ -847,20 +850,55 @@ private fun AnnotatedString.Builder.appendMarked(message: String, query: String)
  *
  * Runs shell commands; not for the main thread.
  */
+/**
+ * The newest logcat line this app has stored.
+ *
+ * Without it every pull took the same window again and appended all of it, so pressing
+ * refresh twice doubled the stored log. That is what made a handful of attach lines read as a
+ * flood (issue #122). Kept in the preferences rather than in memory so a restart of the app
+ * does not import the same window again either.
+ */
+private const val PREF_PULLED_UP_TO = "log_pulled_up_to"
+
+private fun pulledUpTo(): Long =
+    ShizukuSettings.getPreferences().getLong(PREF_PULLED_UP_TO, 0L)
+
+private fun setPulledUpTo(at: Long) {
+    ShizukuSettings.getPreferences().edit().putLong(PREF_PULLED_UP_TO, at).apply()
+}
+
 private fun pullLogcat(): Int {
     val filter = SHIZUKU_TAGS.joinToString(" ") { "$it:V" }
     val out = runShellCommand("logcat -d -v epoch -t 600 $filter '*:S' 2>/dev/null") ?: return 0
 
+    val since = pulledUpTo()
+    var newest = since
     var added = 0
     out.lineSequence().forEach { line ->
         val match = LOGCAT.find(line) ?: return@forEach
-        val tag = match.groupValues[3].trim()
+        val pid = match.groupValues[2].toIntOrNull()
+        val tag = match.groupValues[4].trim()
         // Ours are already stored, with the tag this app uses for them.
         if (OWN_TAGS.any { tag.startsWith(it) }) return@forEach
+        // The attach line is written by every app that embeds this API, under a tag that names
+        // no process: a server start hands the binder to all of them, and this screen pulled
+        // every one of those lines into this app's log. That is the burst of
+        // "ShizukuApplication attachApplication" reported in issue #122, and the line that
+        // belongs here is this process's own.
+        if (tag == "ShizukuApplication" && pid != Process.myPid()) return@forEach
         val at = match.groupValues[1].toDoubleOrNull()?.times(1000)?.toLong() ?: return@forEach
-        Diag.log(match.groupValues[2].firstOrNull() ?: 'I', tag, match.groupValues[4].trim())
+        // Already stored by an earlier pull.
+        if (at <= since) return@forEach
+        Diag.store(
+            at,
+            match.groupValues[3].firstOrNull() ?: 'I',
+            tag,
+            match.groupValues[5].trim()
+        )
+        if (at > newest) newest = at
         added++
     }
+    if (newest > since) setPulledUpTo(newest)
     return added
 }
 
@@ -874,9 +912,10 @@ private val SHIZUKU_TAGS = listOf(
  *
  * The timestamp is padded to a fixed width, so the line starts with spaces - the first version
  * of this anchored on a digit and matched nothing at all, which looked exactly like there being
- * nothing to pull.
+ * nothing to pull. The pid is captured because the tag alone cannot say which process a line
+ * came from, and one of these tags is written by every app that embeds the API.
  */
-private val LOGCAT = Regex("""^\s*(\d+\.\d+)\s+\d+\s+\d+\s+([VDIWEF])\s+(.+?):\s?(.*)$""")
+private val LOGCAT = Regex("""^\s*(\d+\.\d+)\s+(\d+)\s+\d+\s+([VDIWEF])\s+(.+?):\s?(.*)$""")
 
 private val OWN_TAGS = listOf(AppConstants.TAG, "ShizukuWatchdog", "ShizukuStateMachine")
 

@@ -144,6 +144,21 @@ object Diag {
             clean + (throwable?.let { "\n" + Log.getStackTraceString(it) } ?: "")
         )
 
+        append(at, level, tag, clean)
+    }
+
+    /**
+     * Stores a line that came from logcat, without writing it back there.
+     *
+     * Writing it back is how the log grew on every pull: the copy this app emitted matched the
+     * tags the pull reads, so the next pull imported it again, one generation per refresh
+     * (issue #122). The timestamp is the one the line arrived with rather than now, which also
+     * makes what has been pulled a question the cursor can answer.
+     */
+    fun store(at: Long, level: Char, tag: String, message: String) =
+        append(at, level, tag, message.replace(SEP, ' ').replace('\n', ' ').trim())
+
+    private fun append(at: Long, level: Char, tag: String, clean: String) {
         synchronized(lock) {
             loadLocked()
             entries.addLast(Entry(at, level, tag, clean))
