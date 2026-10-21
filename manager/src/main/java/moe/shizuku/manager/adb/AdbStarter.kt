@@ -13,19 +13,22 @@ import javax.net.ssl.SSLException
 import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbClient
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
+import moe.shizuku.manager.start.ConnectFailureKind
+import moe.shizuku.manager.start.MAX_FRESH_PORT_SEARCHES
+import moe.shizuku.manager.start.PortRetryDecision
+import moe.shizuku.manager.start.StartTransport
+import moe.shizuku.manager.start.WirelessPortLog
+import moe.shizuku.manager.start.classifyConnectFailure
+import moe.shizuku.manager.start.decideAfterConnectFailure
 import moe.shizuku.manager.start.writeGlobalSetting
 import moe.shizuku.manager.starter.Starter
 import moe.shizuku.manager.utils.EnvironmentUtils
@@ -46,8 +49,25 @@ private fun Throwable.isCertificateUnknown(): Boolean {
         text.contains("SSLV3_ALERT", ignoreCase = true)
 }
 
+/**
+ * How far a start got, for the caller that has to decide what a failure means.
+ *
+ * A connection that failed before the starter was sent can be made again on another port. One that
+ * failed after it cannot: the server may be coming up, and a second start over it is the one that
+ * kills it.
+ */
+class StartProgress {
+    @Volatile
+    var starterSent = false
+}
+
 object AdbStarter {
     /**
+     * @param progress told when the starter is about to be sent, so that a failure before that
+     *   point can be told apart from one after it.
+     * @param connectAttempts how many times the connection is tried before it is reported failed;
+     *   the callers that have another port to turn to ask for fewer, rather than spend ten seconds
+     *   on a port that may be the stale one.
      * @param openTcpPort open the classic ADB port as part of this start, even when
      *   the "TCP mode" setting is off. A USB start asks for exactly that: the port is
      *   what makes later USB starts work without wireless debugging or a computer.
@@ -56,7 +76,9 @@ object AdbStarter {
         context: Context,
         port: Int,
         log: ((String) -> Unit)? = null,
-        openTcpPort: Boolean = false
+        openTcpPort: Boolean = false,
+        progress: StartProgress? = null,
+        connectAttempts: Int = CONNECT_ATTEMPTS
     ) {
         suspend fun AdbClient.runCommand(cmd: String) {
             if (log != null) {
@@ -143,11 +165,12 @@ object AdbStarter {
 
             AdbClient("127.0.0.1", activePort, key).use { client ->
                 // connectWithRetry reports a rejected handshake as pairing-required.
-                connectWithRetry(client)
+                connectWithRetry(client, connectAttempts)
                 log?.invoke("Successfully connected on port $activePort...\n")
                 // A start replaced while it connected must not go on to run its starter: the
                 // replacement runs one of its own, and the second one kills the first's server.
                 currentCoroutineContext().ensureActive()
+                progress?.starterSent = true
                 client.runCommand("shell:${Starter.internalCommand}")
             }
 
@@ -159,6 +182,9 @@ object AdbStarter {
             // And the port itself: a wireless one is random per boot, so this is the only thing that
             // lets the next start reach adbd without searching for it.
             ShizukuSettings.setLastAdbPort(activePort)
+            // With the boot it belongs to: a wireless port is not the same port after a restart, and
+            // this is what lets the next start tell a remembered port from a stale one.
+            ShizukuSettings.setLastAdbPortBoot(EnvironmentUtils.getBootCount())
             Diag.info(
                 TAG,
                 "Server started over ${if (viaTcp) "the classic (TCP) port" else "the wireless port"}" +
@@ -334,13 +360,20 @@ object AdbStarter {
      * Throws [AdbPairingRequiredException] when the fallback needs pairing first.
      *
      * [knownWirelessPort] is a wireless port the caller already knows. When something is listening
-     * on it, it is used as it is and the mDNS search is skipped: the search has failed (after
-     * its full fifteen seconds) on a phone whose wireless port was answering the whole time.
+     * on it, it is used as it is and the search is skipped: the search has failed (after its full
+     * fifteen seconds) on a phone whose wireless port was answering the whole time. When nothing
+     * is, or the connection to it fails the way a stale port's does, a fresh port is asked for
+     * ([freshWirelessPort]) - at most [MAX_FRESH_PORT_SEARCHES] times, never the same one twice.
+     *
+     * [hunt] is the caller's search, kept running for as long as the caller needs a port: with the
+     * experiment on, the asking for wireless debugging that keeps the port alive is part of it.
+     * Without one, a search of its own is made for this call.
      */
     suspend fun openTcpPort(
         context: Context,
         port: Int,
-        knownWirelessPort: Int? = null
+        knownWirelessPort: Int? = null,
+        hunt: WirelessPortHunt? = null
     ): Boolean = withContext(Dispatchers.IO) {
         // Wi-Fi is what keeps wireless debugging and with it the wireless port alive, and
         // without it there is usually nothing to borrow. The no-network start is the
@@ -358,61 +391,136 @@ object AdbStarter {
         // Best effort: without WRITE_SECURE_SETTINGS the write throws, and that must not
         // abort the attempt wireless debugging may already be on.
         context.writeGlobalSetting("adb_wifi_enabled", 1)
-        val wirelessPort = knownWirelessPort?.takeIf { isPortListening(it) }
-            ?: findWirelessPort(context)
-            ?: run {
+
+        val key = AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
+        val failed = mutableSetOf<Int>()
+        var searches = 0
+        var candidate = knownWirelessPort
+
+        // The first round uses the port the caller knows; every later one is a search that the
+        // previous round's failure paid for, so the rounds end with the searches.
+        for (round in 0..MAX_FRESH_PORT_SEARCHES) {
+            var found: Int? = candidate?.takeIf { isPortListening(it) }
+            if (found == null) {
+                val stale = candidate
+                if (stale != null) {
+                    WirelessPortLog.rejected(
+                        stale, StartTransport.PortSource.REMEMBERED, "nothing answers on it"
+                    )
+                    failed += stale
+                }
+                if (searches < MAX_FRESH_PORT_SEARCHES) {
+                    searches++
+                    WirelessPortLog.searching(
+                        if (stale != null) "port $stale does not answer" else "no wireless port is known"
+                    )
+                    found = freshWirelessPort(context, failed, FRESH_PORT_TIMEOUT_MS, hunt)
+                }
+            }
+            val wirelessPort = found ?: run {
                 Diag.warn(TAG, "Not opening the ADB port: no wireless debugging port was found")
                 return@withContext false
             }
 
-        val key = AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
+            try {
+                // Which attempt this is, and over what, before adbd is asked to restart: the
+                // answer to "did the port open, and did it cost a running server" starts here.
+                Diag.info(
+                    TAG,
+                    "Opening the ADB port $port over the wireless connection on $wirelessPort, " +
+                        "which restarts adbd"
+                )
 
-        try {
-            // Which attempt this is, and over what, before adbd is asked to restart: the
-            // answer to "did the port open, and did it cost a running server" starts here.
-            Diag.info(
-                TAG,
-                "Opening the ADB port $port over the wireless connection on $wirelessPort, " +
-                    "which restarts adbd"
-            )
-
-            AdbClient("127.0.0.1", wirelessPort, key).use { client ->
-                client.connectForPairing()
-                // adbd restarts to listen on the new port, so the connection dying here
-                // is the expected outcome, not a failure.
-                runCatching { client.command("tcpip:$port") }
-                    .onFailure { if (it !is EOFException && it !is SocketException) throw it }
+                AdbClient("127.0.0.1", wirelessPort, key).use { client ->
+                    client.connectForPairing()
+                    // adbd restarts to listen on the new port, so the connection dying here
+                    // is the expected outcome, not a failure.
+                    runCatching { client.command("tcpip:$port") }
+                        .onFailure { if (it !is EOFException && it !is SocketException) throw it }
+                }
+            } catch (e: AdbPairingRequiredException) {
+                if (retryableOpen(e, searches)) {
+                    failed += wirelessPort
+                    candidate = null
+                    continue
+                }
+                throw e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (retryableOpen(e, searches)) {
+                    failed += wirelessPort
+                    candidate = null
+                    continue
+                }
+                Diag.warn(TAG, "Could not open the ADB port over the wireless connection", e)
+                return@withContext false
             }
-        } catch (e: AdbPairingRequiredException) {
-            throw e
-        } catch (e: Exception) {
-            Diag.warn(TAG, "Could not open the ADB port over the wireless connection", e)
-            return@withContext false
-        }
 
-        val available = waitForPortAvailable("127.0.0.1", port)
-        Diag.info(TAG, "ADB port $port open: $available")
-        available
+            val available = waitForPortAvailable("127.0.0.1", port)
+            Diag.info(TAG, "ADB port $port open: $available")
+            return@withContext available
+        }
+        false
     }
 
-    /** The wireless (TLS) port, as advertised over mDNS, or null if none shows up. */
-    private suspend fun findWirelessPort(context: Context, timeoutMs: Long = 15_000L): Int? {
+    /**
+     * Whether a failed connection on the way to opening the classic port is worth another port.
+     * Logged with the reason when it is, because a port that is passed over silently is the thing
+     * that made the stale one impossible to see.
+     */
+    private fun retryableOpen(e: Exception, searchesUsed: Int): Boolean {
+        val kind = classifyConnectFailure(e)
+        val decision = decideAfterConnectFailure(
+            wireless = true,
+            commandSent = false,
+            failure = kind,
+            searchesUsed = searchesUsed
+        )
+        if (decision != PortRetryDecision.SEARCH_AGAIN) return false
+        Diag.warn(TAG, "Connection to the wireless port failed ($kind); asking for a fresh one")
+        return true
+    }
+
+    /**
+     * The latest wireless (TLS) port that is not in [exclude], as advertised over mDNS, or null if
+     * none shows up within [timeoutMs].
+     *
+     * The one way the start asks for a port after the first guesses: the search keeps running
+     * (see [WirelessPortHunt]) and answers with the most recent announcement rather than the first,
+     * so a port that adbd has since replaced is not handed out. With [hunt] the caller's own search
+     * answers; without one, a search is made for this call and ended with it.
+     *
+     * A search that failed for good (the network was refused) is a null here, not an exception: the
+     * callers all have a way to carry on without a fresh port, and say so.
+     */
+    suspend fun freshWirelessPort(
+        context: Context,
+        exclude: Set<Int>,
+        timeoutMs: Long,
+        hunt: WirelessPortHunt? = null
+    ): Int? {
         // mDNS discovery of the wireless port needs the service discovery the platform gained
         // in Android 11 (API 30), and the class that asks for it does not exist before then:
         // naming it would be a NoClassDefFoundError rather than an answer of "no port".
         // Returning null is the same answer the discovery gives when nothing advertises, and
         // it is the truth here - an older platform has no wireless debugging to advertise.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        return withTimeoutOrNull(timeoutMs) {
-            callbackFlow {
-                val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) { p ->
-                    if (p.second > 0) trySend(p.second)
-                }
-                adbMdns.start()
-                awaitClose { adbMdns.stop() }
-            }.first()
+        val search = hunt ?: WirelessPortHunt(context, forced = false)
+        return try {
+            search.fresh(exclude, timeoutMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Diag.warn(TAG, "The search for a wireless port ended: ${e.message}")
+            null
+        } finally {
+            if (hunt == null) search.close()
         }
     }
+
+    /** How long one search for a fresh port waits for an announcement. */
+    const val FRESH_PORT_TIMEOUT_MS = 10_000L
 
     /**
      * Whether something is listening on a local port at this moment.
@@ -492,9 +600,10 @@ object AdbStarter {
         }
     }
 
-    private suspend fun connectWithRetry(client: AdbClient) {
+    private const val CONNECT_ATTEMPTS = 5
+
+    private suspend fun connectWithRetry(client: AdbClient, maxAttempts: Int = CONNECT_ATTEMPTS) {
         var delayTime = 0L
-        val maxAttempts = 5
         for (attempt in 1..maxAttempts) {
             try {
                 delay(delayTime)

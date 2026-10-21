@@ -207,4 +207,101 @@ class StartTransportTest {
             )
         )
     }
+
+    @Test
+    fun `candidates keep the order and say where each came from`() {
+        assertEquals(
+            listOf(
+                StartTransport.PortCandidate(5555, StartTransport.PortSource.CLASSIC_PROPERTY),
+                StartTransport.PortCandidate(40001, StartTransport.PortSource.TLS_PROPERTY),
+                StartTransport.PortCandidate(43279, StartTransport.PortSource.REMEMBERED),
+                StartTransport.PortCandidate(5556, StartTransport.PortSource.APP_SETTING)
+            ),
+            StartTransport.candidatePorts(
+                configured = 5555, tlsProperty = 40001, remembered = 43279, appTcpPort = 5556
+            )
+        )
+    }
+
+    @Test
+    fun `a port two guesses agree on is asked once, under the first`() {
+        assertEquals(
+            listOf(StartTransport.PortCandidate(5555, StartTransport.PortSource.CLASSIC_PROPERTY)),
+            StartTransport.candidatePorts(
+                configured = 5555, tlsProperty = -1, remembered = 5555, appTcpPort = 5555
+            )
+        )
+    }
+
+    @Test
+    fun `candidates without a port are dropped`() {
+        assertTrue(
+            StartTransport.candidatePorts(
+                configured = -1, tlsProperty = 0, remembered = null, appTcpPort = 0
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun `a wireless port from an earlier boot is not remembered`() {
+        assertEquals(
+            StartTransport.RememberedPort.OTHER_BOOT,
+            StartTransport.rememberedPortVerdict(
+                lastPort = 36371, lastWasClassic = false, lastBoot = 41, currentBoot = 42, appTcpPort = 5555
+            )
+        )
+    }
+
+    @Test
+    fun `a wireless port from this boot is remembered`() {
+        assertEquals(
+            StartTransport.RememberedPort.USABLE,
+            StartTransport.rememberedPortVerdict(
+                lastPort = 36371, lastWasClassic = false, lastBoot = 42, currentBoot = 42, appTcpPort = 5555
+            )
+        )
+    }
+
+    @Test
+    fun `a wireless port with no boot recorded is not trusted`() {
+        assertEquals(
+            StartTransport.RememberedPort.UNKNOWN_BOOT,
+            StartTransport.rememberedPortVerdict(
+                lastPort = 36371, lastWasClassic = false, lastBoot = -1, currentBoot = 42, appTcpPort = 5555
+            )
+        )
+        assertEquals(
+            StartTransport.RememberedPort.UNKNOWN_BOOT,
+            StartTransport.rememberedPortVerdict(
+                lastPort = 36371, lastWasClassic = false, lastBoot = 42, currentBoot = -1, appTcpPort = 5555
+            )
+        )
+    }
+
+    @Test
+    fun `the classic port survives a restart`() {
+        assertEquals(
+            StartTransport.RememberedPort.USABLE,
+            StartTransport.rememberedPortVerdict(
+                lastPort = 5555, lastWasClassic = true, lastBoot = 41, currentBoot = 42, appTcpPort = 5555
+            )
+        )
+        // Saved by a version that did not record the transport's boot, but it is the app's own port.
+        assertEquals(
+            StartTransport.RememberedPort.USABLE,
+            StartTransport.rememberedPortVerdict(
+                lastPort = 5555, lastWasClassic = false, lastBoot = -1, currentBoot = 42, appTcpPort = 5555
+            )
+        )
+    }
+
+    @Test
+    fun `nothing recorded is nothing remembered`() {
+        assertEquals(
+            StartTransport.RememberedPort.NONE,
+            StartTransport.rememberedPortVerdict(
+                lastPort = -1, lastWasClassic = false, lastBoot = -1, currentBoot = 42, appTcpPort = 5555
+            )
+        )
+    }
 }

@@ -1,51 +1,46 @@
 package moe.shizuku.manager.worker
 
-import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
-import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.database.ContentObserver
-import android.net.Uri
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
-import android.util.Log
 import moe.shizuku.manager.service.HidingWatchService
 import androidx.core.app.NotificationCompat
-import androidx.lifecycle.asFlow
 import androidx.work.*
 import java.io.EOFException
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
-import moe.shizuku.manager.adb.AdbMdns
+import moe.shizuku.manager.adb.StartProgress
+import moe.shizuku.manager.adb.WirelessPortHunt
 import moe.shizuku.manager.adb.AdbPairingRequiredException
 import moe.shizuku.manager.adb.AdbStarter
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
+import moe.shizuku.manager.start.MAX_FRESH_PORT_SEARCHES
+import moe.shizuku.manager.start.PortRetryDecision
+import moe.shizuku.manager.start.WirelessPortLog
+import moe.shizuku.manager.start.classifyConnectFailure
+import moe.shizuku.manager.start.decideAfterConnectFailure
+import moe.shizuku.manager.start.decideBeforeConnect
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter.WorkerState
 import moe.shizuku.manager.settings.BugReportDialogActivity
 import moe.shizuku.manager.start.ForcedWirelessDebugging
@@ -100,12 +95,14 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     private suspend fun startServer(): Result {
+        // The search for a wireless port, once there is one; see where it is made. Held here so
+        // that every way out of the attempt ends it.
+        var hunt: WirelessPortHunt? = null
         try {
             requestedMethod = inputData.getInt(KEY_START_METHOD, ShizukuSettings.StartMethod.WIRELESS)
 
             notify(WorkerState.RUNNING)
 
-            val cr = applicationContext.contentResolver
             val startMethod = requestedMethod
             val experiment = ShizukuSettings.getForceWirelessDebugging()
             // The method that says "without a network" means it whatever the experiment
@@ -255,12 +252,50 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             // instead of spending fifteen seconds (or the no-network method's two minutes) finding
             // a port that was there all along. Measured against the same trick in Shevery, whose
             // starts are instant for exactly this reason (issue #84).
-            val candidates = StartTransport.portCandidates(
-                configured = tcpPort,
-                lastStart = ShizukuSettings.getLastAdbPort(),
+            WirelessPortLog.reset()
+            val tlsProperty = EnvironmentUtils.getAdbTlsPort()
+            logTlsPropertyOnce(tlsProperty)
+
+            // The port the last start reached adbd on, if it can still be that port. A wireless one
+            // is drawn at random at every boot, so one recorded in an earlier boot is not tried at
+            // all: it was the first thing a start after a restart asked, and it was not there.
+            val lastPort = ShizukuSettings.getLastAdbPort()
+            val verdict = StartTransport.rememberedPortVerdict(
+                lastPort = lastPort,
+                lastWasClassic =
+                    ShizukuSettings.getLastAdbTransport() == ShizukuSettings.ADB_TRANSPORT_TCP,
+                lastBoot = ShizukuSettings.getLastAdbPortBoot(),
+                currentBoot = EnvironmentUtils.getBootCount(),
                 appTcpPort = ShizukuSettings.getTcpPort()
             )
-            val livePort = AdbStarter.firstListening(candidates)
+            when (verdict) {
+                StartTransport.RememberedPort.OTHER_BOOT -> WirelessPortLog.rejected(
+                    lastPort, StartTransport.PortSource.REMEMBERED,
+                    "a wireless port from an earlier boot (boot " +
+                        "${ShizukuSettings.getLastAdbPortBoot()}, this is ${EnvironmentUtils.getBootCount()})"
+                )
+                StartTransport.RememberedPort.UNKNOWN_BOOT -> WirelessPortLog.rejected(
+                    lastPort, StartTransport.PortSource.REMEMBERED,
+                    "a wireless port with no boot recorded for it"
+                )
+                else -> Unit
+            }
+            val candidates = StartTransport.candidatePorts(
+                configured = tcpPort,
+                tlsProperty = tlsProperty,
+                remembered = lastPort.takeIf { verdict == StartTransport.RememberedPort.USABLE },
+                appTcpPort = ShizukuSettings.getTcpPort()
+            )
+            var live: StartTransport.PortCandidate? = null
+            for (candidate in candidates) {
+                if (AdbStarter.isPortListening(candidate.port)) {
+                    live = candidate
+                    break
+                }
+                WirelessPortLog.rejected(candidate.port, candidate.source, "nothing answers on it")
+            }
+            val liveFound = live
+            val livePort = liveFound?.port
             // Said every time, not only when one answers: "the search ran because nothing was
             // listening" and "the search ran because this was never asked" look identical in a log
             // without it, and the second was a real possibility - the watchdog's direct restart
@@ -268,9 +303,11 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
             Diag.info(
                 AppConstants.TAG,
                 "Ports tried before the search: " +
-                    candidates.joinToString(", ").ifEmpty { "none" } +
+                    candidates.joinToString(", ") { "${it.port} (${it.source.label})" }
+                        .ifEmpty { "none" } +
                     if (livePort != null) "; $livePort answered" else "; none answered"
             )
+            liveFound?.let { WirelessPortLog.resolved(it.port, it.source) }
 
             val classicPortListening = tcpPort > 0 && livePort == tcpPort
             if (tcpPort > 0 && !classicPortListening && !usbMethod) {
@@ -286,196 +323,59 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 tcpMode = ShizukuSettings.getTcpMode(),
                 portListening = classicPortListening
             )
+
+            // The search for a wireless port, kept for the whole attempt rather than for the first
+            // answer: with the experiment on it is also the asking that keeps wireless debugging
+            // alive, and that has to last until the connection is made (or, in TCP mode, until the
+            // classic port is open). Nothing in it runs until a port is asked for. Closed below once
+            // the connection is made, and in the `finally` for every other way out.
+            val searchHunt = WirelessPortHunt(
+                applicationContext,
+                forced = forcedWireless,
+                promoteForHotspot = { promoteForHotspot() },
+                onForcing = { notify(WorkerState.FORCING_WIRELESS) },
+                onWaitingForUnlock = { waitForUnlockInForeground() }
+            )
+            hunt = searchHunt
+
             // A candidate that answered is used as it is, except for the USB method: that one is
             // the classic port by promise, and a remembered wireless port is not it. Where nothing
             // answered, the old decision stands and the search takes over.
-            var port = when {
+            var portSource = StartTransport.PortSource.CLASSIC_PROPERTY
+            var port: Int = when {
                 usbMethod -> tcpPort
-                livePort != null -> livePort
+                liveFound != null -> {
+                    portSource = liveFound.source
+                    liveFound.port
+                }
                 useClassicPort -> tcpPort
-                else -> null
-            } ?: callbackFlow {
-                // The mDNS service discovery below arrived with wireless debugging in Android 11
-                // (API 30), and so did the class that queries it: on anything older the class
-                // does not exist at all and naming it is a NoClassDefFoundError rather than a
-                // start that reports no port. The branch above cannot reach here on those
-                // platforms - a start that may not use the classic port already knows TLS is
-                // supported, which is exactly API 30 - so this only makes that explicit and
-                // keeps the reference off the older platforms.
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                    close(TimeoutException("mDNS wireless discovery needs Android 11"))
-                    awaitClose { }
-                    return@callbackFlow
-                }
-
-                // Before anything asks for the hotspot. A local-only hotspot is a request the
-                // platform may refuse outright to an app that is only a background worker, and
-                // on the phone that reported this the refusal came back as ERROR_INCOMPATIBLE_MODE
-                // on a start that had no reason to fail. The call resumes once the worker is
-                // actually in the foreground, which is the state the request is gated on.
-                if (forcedWireless) promoteForHotspot()
-
-                val adbMdns = AdbMdns(applicationContext, AdbMdns.TLS_CONNECT) { p ->
-                    if (p.second > 0) trySend(p.second)
-                }
-
-                var awaitingAuth = false
-                var timeoutJob: Job? = null
-                var unlockReceiver: BroadcastReceiver? = null
-                var nudgeJob: Job? = null
-
-                fun startDiscoveryWithTimeout() {
-                    adbMdns.start()
-                    timeoutJob?.cancel()
-                    // The experiment asks for minutes, so the attempt has to live for
-                    // minutes: a 15 second deadline closed it moments after the hotspot
-                    // had come up, which at boot is most of those 15 seconds gone on
-                    // bringing the interface up in the first place.
-                    val deadline =
-                        if (forcedWireless) FORCED_DISCOVERY_TIMEOUT_MS else 15_000L
-                    timeoutJob = launch {
-                        delay(deadline)
-                        close(TimeoutException("Timed out during mDNS port discovery"))
-                    }
-                }
-
-                fun handleAuth() {
-                    // Only once: this is called again every time the setting changes, and
-                    // the experiment below makes it change over and over. A second call
-                    // would post the same "waiting for unlock" notification again and
-                    // leave another receiver behind.
-                    if (unlockReceiver != null) return
-                    val km = applicationContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-                    if (km.isKeyguardLocked) {
-                        val notification = ShizukuReceiverStarter.buildNotification(
-                            applicationContext,
-                            null,
-                            requestedMethod
+                else -> {
+                    portSource = StartTransport.PortSource.MDNS
+                    try {
+                        // The experiment asks for minutes, so the attempt has to live for minutes:
+                        // a 15 second deadline closed it moments after the hotspot had come up,
+                        // which at boot is most of those 15 seconds gone on bringing the interface
+                        // up in the first place. The clock starts when discovery does.
+                        val deadline =
+                            if (forcedWireless) FORCED_DISCOVERY_TIMEOUT_MS else 15_000L
+                        searchHunt.fresh(emptySet(), deadline)
+                            ?: throw TimeoutException("Timed out during mDNS port discovery")
+                    } catch (e: TimeoutException) {
+                        // Nothing advertised a wireless port. TCP mode keeps the classic port
+                        // open so that a start can happen without a network at all, and
+                        // refusing it here would throw the mode away exactly when it is
+                        // needed: a reboot with no Wi-Fi to associate with.
+                        val fallback = StartTransport.classicPortFallback(tcpPort) ?: throw e
+                        Diag.info(
+                            AppConstants.TAG,
+                            "Wireless discovery found nothing; starting over the classic ADB port $fallback"
                         )
-                        // The type has to be handed over here, not only declared in the
-                        // manifest: WorkManager passes on what this carries, so the two
-                        // argument form asks for a foreground service with no type at all,
-                        // which Android 14 refuses outright and takes the process down with
-                        // it. That combination is the locked-device start, and therefore
-                        // every start a reboot makes, which is where the crashes came from:
-                        // the manifest was right and the call was not.
-                        val foregroundInfo = if (Build.VERSION.SDK_INT >= 34) {
-                            ForegroundInfo(
-                                ShizukuReceiverStarter.NOTIFICATION_ID,
-                                notification,
-                                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                            )
-                        } else {
-                            ForegroundInfo(
-                                ShizukuReceiverStarter.NOTIFICATION_ID,
-                                notification
-                            )
-                        }
-                        setForegroundAsync(foregroundInfo)
-                        notify(WorkerState.WAITING_FOR_UNLOCK)
-
-                        val filter = IntentFilter(Intent.ACTION_USER_PRESENT)
-                        unlockReceiver = object : BroadcastReceiver() {
-                            override fun onReceive(context: Context, intent: Intent) {
-                                if (intent.action == Intent.ACTION_USER_PRESENT) {
-                                    context.unregisterReceiver(this)
-                                    unlockReceiver = null
-                                    // Wireless debugging must be on for the TLS port to be
-                                    // advertised, otherwise mDNS discovery can never find it.
-                                    context.writeGlobalSetting("adb_wifi_enabled", 1)
-                                }
-                            }
-                        }
-                        applicationContext.registerReceiver(unlockReceiver, filter)
-                    } else awaitingAuth = true
-
-                    // With the experiment on, the attempt keeps its deadline and keeps
-                    // discovering: it is fighting a setting the framework keeps reverting,
-                    // so every revert would otherwise cancel the only thing that ends the
-                    // attempt, and the worker would wait forever instead of retrying. The
-                    // daemon can also be up while the setting reads 0, which is the state
-                    // discovery should stay out for.
-                    if (!forcedWireless) {
-                        timeoutJob?.cancel()
-                        adbMdns.stop()
+                        portSource = StartTransport.PortSource.CLASSIC_PROPERTY
+                        fallback
                     }
-                }
-
-                val observer = object : ContentObserver(null) {
-                    override fun onChange(selfChange: Boolean) {
-                        when (Settings.Global.getInt(cr, "adb_wifi_enabled", 0)) {
-                            // Reading 0 is the framework refusing the setting again, which
-                            // is precisely the state the experiment is asking it out of, so
-                            // it must not end the attempt: closing here killed the whole
-                            // thing about a second in, before the hotspot was up or the
-                            // writes had a chance, and the result was a start that only
-                            // ever said it was waiting.
-                            0 -> if (awaitingAuth && !forcedWireless) {
-                                close(SecurityException("Network is not authorized for wireless debugging"))
-                            } else handleAuth()
-                            1 -> startDiscoveryWithTimeout()
-                        }
-                    }
-                }
-
-                // Required for discovery without it the device never advertises
-                // _adb-tls-connect and the worker just times out. Best effort: if we may
-                // not write, discovery still gets its chance before we complain.
-                applicationContext.writeGlobalSetting("adb_wifi_enabled", 1)
-                cr.registerContentObserver(Settings.Global.getUriFor("adb_wifi_enabled"), false, observer)
-
-                // Opt-in, and only when there is no port to fall back on: keep asking for
-                // wireless debugging the way the Settings toggle cannot be asked when the
-                // device has no network, and bring up an interface for discovery if
-                // asking is not enough on its own. Cancelled with this flow, because it
-                // is only worth doing while something is trying to discover the port.
-                //
-                // Discovery waits for the hotspot in this case, and that ordering is the
-                // difference between a start and a timeout: a request registered before the
-                // interface exists is kept by NsdManager with nothing to query on, so it sits
-                // there silently while the port is being advertised next to it. The callback
-                // fires when the hotspot attempt is over, whether it came up or not - the
-                // latter keeps the discovery attempt a start without a hotspot always had.
-                if (forcedWireless) {
-                    notify(WorkerState.FORCING_WIRELESS)
-                    nudgeJob = launch {
-                        ForcedWirelessDebugging.nudge(
-                            applicationContext,
-                            { message ->
-                                Diag.info(AppConstants.TAG, "Forced wireless debugging: $message")
-                            }
-                        ) {
-                            startDiscoveryWithTimeout()
-                        }
-                    }
-                } else {
-                    startDiscoveryWithTimeout()
-                }
-
-                awaitClose {
-                    adbMdns.stop()
-                    timeoutJob?.cancel()
-                    nudgeJob?.cancel()
-                    cr.unregisterContentObserver(observer)
-                    unlockReceiver?.let { applicationContext.unregisterReceiver(it) }
-                }
-            }.let { discovery ->
-                try {
-                    discovery.first()
-                } catch (e: TimeoutException) {
-                    // Nothing advertised a wireless port. TCP mode keeps the classic port
-                    // open so that a start can happen without a network at all, and
-                    // refusing it here would throw the mode away exactly when it is
-                    // needed: a reboot with no Wi-Fi to associate with.
-                    val fallback = StartTransport.classicPortFallback(tcpPort) ?: throw e
-                    Diag.info(
-                        AppConstants.TAG,
-                        "Wireless discovery found nothing; starting over the classic ADB port $fallback"
-                    )
-                    fallback
                 }
             }
-            
+
             // TCP mode promises a classic ADB port, and only a USB start ever opened one: a
             // wireless start, which is what the no-network method is, left TCP mode meaning
             // "keep whatever port there is", and after a reboot with no Wi-Fi there is none,
@@ -504,7 +404,9 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 ShizukuStateMachine.set(ShizukuStateMachine.State.STARTING)
 
                 val opened = try {
-                    AdbStarter.openTcpPort(applicationContext, wanted, knownWirelessPort = port)
+                    AdbStarter.openTcpPort(
+                        applicationContext, wanted, knownWirelessPort = port, hunt = searchHunt
+                    )
                 } catch (e: AdbPairingRequiredException) {
                     throw e
                 } catch (e: CancellationException) {
@@ -546,16 +448,24 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                         "TCP mode: starting over port ${chosen ?: port}" +
                             if (chosen == null) " (neither $port nor $wanted answers)" else ""
                     )
-                    if (chosen != null) port = chosen
+                    if (chosen != null) {
+                        port = chosen
+                        if (chosen == wanted) portSource = StartTransport.PortSource.APP_SETTING
+                    }
                 }
             }
+            // The classic port is open and in use: nothing is left to ask wireless debugging for.
+            // Not before - the `tcpip` request above is what the asking had to last until.
+            if (port == wanted) searchHunt.close()
 
             notify(WorkerState.CONNECTING)
             // A start that was replaced while it looked for the port stops here. Cancelling the
             // work does not interrupt the blocking calls below, so without this it went on to
             // send its own starter, and two starters ran at once.
             currentCoroutineContext().ensureActive()
-            AdbStarter.startAdb(applicationContext, port, openTcpPort = usbMethod)
+            port = connectAndStart(searchHunt, port, portSource, usbMethod, tcpPort, wanted)
+            // Connected, and the starter sent: nothing is left to find a port for.
+            searchHunt.close()
             Starter.waitForBinder()
             // After the binder, not before: asked for sooner, the server is not there yet and the
             // line always read zero.
@@ -689,6 +599,139 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 notify(WorkerState.AWAITING_RETRY)
                 return Result.retry()
             }
+        } finally {
+            hunt?.close()
+        }
+    }
+
+    /**
+     * Connects to [startPort] and sends the starter, turning to a fresh wireless port when the one
+     * in hand turns out not to be adbd's. Returns the port the starter was sent over.
+     *
+     * A wireless port is only good while adbd is running the wireless server it was drawn for, and
+     * that can be restarted from under a start - by the framework switching the setting back off,
+     * or by a `tcpip` request - so a port that was right when it was found can be wrong a moment
+     * later. Two things are asked of it before the starter goes out: that something listens, which
+     * costs a connect and spares the ten seconds the connection's own retries would spend on a
+     * refused one, and that the handshake completes. A port that fails either way is not asked
+     * again, and at most [MAX_FRESH_PORT_SEARCHES] others are tried, within the time one search is
+     * given each, before the failure is the start's. Once the starter has gone out nothing is
+     * retried: a second start over a server that is coming up is what kills it.
+     *
+     * When no other port is announced, the port in hand gets its full set of connection attempts:
+     * a wireless port that is merely slow to answer is not a reason to give up.
+     */
+    private suspend fun connectAndStart(
+        hunt: WirelessPortHunt,
+        startPort: Int,
+        startSource: StartTransport.PortSource,
+        usbMethod: Boolean,
+        tcpPort: Int,
+        wanted: Int
+    ): Int {
+        var port = startPort
+        var source = startSource
+        var searches = 0
+        val failed = mutableSetOf<Int>()
+        val progress = StartProgress()
+
+        while (true) {
+            // The USB method is the classic port by promise, and a start over any port that is
+            // neither the one adbd reports nor the one this app opens is a wireless one.
+            val wireless = !usbMethod && EnvironmentUtils.isTlsSupported() &&
+                port != tcpPort && port != wanted
+
+            val listening = !wireless || AdbStarter.isPortListening(port)
+            if (decideBeforeConnect(wireless, listening, searches) == PortRetryDecision.SEARCH_AGAIN) {
+                WirelessPortLog.rejected(port, source, "nothing answers on it")
+                failed += port
+                searches++
+                WirelessPortLog.searching("port $port does not answer")
+                val fresh = AdbStarter.freshWirelessPort(
+                    applicationContext, failed, AdbStarter.FRESH_PORT_TIMEOUT_MS, hunt
+                )
+                if (fresh != null) {
+                    port = fresh
+                    source = StartTransport.PortSource.MDNS
+                } else {
+                    Diag.warn(
+                        AppConstants.TAG,
+                        "No other wireless port was announced; trying port $port as it is"
+                    )
+                    searches = MAX_FRESH_PORT_SEARCHES
+                }
+                currentCoroutineContext().ensureActive()
+                continue
+            }
+
+            try {
+                AdbStarter.startAdb(
+                    applicationContext,
+                    port,
+                    openTcpPort = usbMethod,
+                    progress = progress,
+                    // Quick to give up while there is another port to turn to; the full set once
+                    // there is not.
+                    connectAttempts = if (wireless && searches < MAX_FRESH_PORT_SEARCHES) 2 else 5
+                )
+                return port
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val kind = classifyConnectFailure(e)
+                if (decideAfterConnectFailure(wireless, progress.starterSent, kind, searches)
+                    != PortRetryDecision.SEARCH_AGAIN
+                ) throw e
+
+                WirelessPortLog.rejected(port, source, "the connection failed ($kind)")
+                failed += port
+                searches++
+                WirelessPortLog.searching("the connection on port $port failed ($kind)")
+                val fresh = AdbStarter.freshWirelessPort(
+                    applicationContext, failed, AdbStarter.FRESH_PORT_TIMEOUT_MS, hunt
+                )
+                if (fresh != null) {
+                    port = fresh
+                    source = StartTransport.PortSource.MDNS
+                } else {
+                    Diag.warn(
+                        AppConstants.TAG,
+                        "No other wireless port was announced; trying port $port once more"
+                    )
+                    searches = MAX_FRESH_PORT_SEARCHES
+                }
+                currentCoroutineContext().ensureActive()
+            }
+        }
+    }
+
+    /** The start waiting on the lock screen: promoted to the foreground, so its prompt is shown. */
+    private fun waitForUnlockInForeground() {
+        setForegroundAsync(buildForegroundInfo())
+        notify(WorkerState.WAITING_FOR_UNLOCK)
+    }
+
+    /**
+     * The type has to be handed over here, not only declared in the manifest: WorkManager passes
+     * on what this carries, so the two argument form asks for a foreground service with no type at
+     * all, which Android 14 refuses outright and takes the process down with it. That combination is
+     * the locked-device start, and therefore every start a reboot makes, which is where the crashes
+     * came from: the manifest was right and the call was not.
+     */
+    private fun buildForegroundInfo(): ForegroundInfo {
+        val notification = ShizukuReceiverStarter.buildNotification(
+            applicationContext,
+            null,
+            requestedMethod
+        )
+        return if (Build.VERSION.SDK_INT >= 34) {
+            ForegroundInfo(
+                ShizukuReceiverStarter.NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            ForegroundInfo(ShizukuReceiverStarter.NOTIFICATION_ID, notification)
         }
     }
 
@@ -706,20 +749,7 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
      * existing port.
      */
     private suspend fun promoteForHotspot() {
-        val notification = ShizukuReceiverStarter.buildNotification(
-            applicationContext,
-            null,
-            requestedMethod
-        )
-        val info = if (Build.VERSION.SDK_INT >= 34) {
-            ForegroundInfo(
-                ShizukuReceiverStarter.NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            ForegroundInfo(ShizukuReceiverStarter.NOTIFICATION_ID, notification)
-        }
+        val info = buildForegroundInfo()
 
         runCatching { setForeground(info) }
             .onFailure {
@@ -825,6 +855,22 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
         fun startInProgress(): Boolean =
             inFlight || (ShizukuStateMachine.startingAgeMs()
                 ?.let { it < ShizukuStateMachine.STARTING_GRACE_MS } == true)
+
+        private val tlsPropertyLogged = AtomicBoolean(false)
+
+        /**
+         * Says once per process whether `service.adb.tls.port` gave an answer. Whether an app may
+         * read it is SELinux policy and differs by vendor, and an unreadable property reads as
+         * unset, so "no value" is the most this can report.
+         */
+        private fun logTlsPropertyOnce(value: Int) {
+            if (!tlsPropertyLogged.compareAndSet(false, true)) return
+            Diag.info(
+                AppConstants.TAG,
+                if (value > 0) "service.adb.tls.port is readable: $value"
+                else "service.adb.tls.port gave no value (unset, or not readable by this app)"
+            )
+        }
 
         private fun beginAttempt() {
             if (inFlightCount.getAndIncrement() == 0) inFlightSince = SystemClock.elapsedRealtime()
