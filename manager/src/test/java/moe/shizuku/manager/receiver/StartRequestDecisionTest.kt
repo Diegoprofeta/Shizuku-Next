@@ -61,4 +61,60 @@ class StartRequestDecisionTest {
             )
         }
     }
+
+    @Test
+    fun `a start before the unlock that can be made without WorkManager is made in the service`() {
+        assertEquals(
+            StartDecision.START_LOCKED,
+            decideStart(
+                binderAlive = false, forceStart = false, userInitiated = false, startInFlight = false,
+                userUnlocked = false, canStartLocked = true
+            )
+        )
+    }
+
+    @Test
+    fun `a start before the unlock that needs WorkManager waits for the unlock`() {
+        assertEquals(
+            StartDecision.DEFER_UNTIL_UNLOCK,
+            decideStart(
+                binderAlive = false, forceStart = false, userInitiated = false, startInFlight = false,
+                userUnlocked = false, canStartLocked = false
+            )
+        )
+    }
+
+    @Test
+    fun `a binder request before the unlock joins the start the service has under way`() {
+        // The request that used to reach WorkManager and take the process down.
+        assertEquals(
+            StartDecision.JOIN_IN_FLIGHT,
+            decideStart(
+                binderAlive = false, forceStart = false, userInitiated = false, startInFlight = true,
+                userUnlocked = false, canStartLocked = true
+            )
+        )
+    }
+
+    @Test
+    fun `a running server is not started again whether or not the phone is unlocked`() {
+        assertEquals(
+            StartDecision.IGNORE_RUNNING,
+            decideStart(
+                binderAlive = true, forceStart = false, userInitiated = false, startInFlight = false,
+                userUnlocked = false, canStartLocked = true
+            )
+        )
+    }
+
+    @Test
+    fun `once unlocked the service's route is not used`() {
+        assertEquals(
+            StartDecision.START,
+            decideStart(
+                binderAlive = false, forceStart = false, userInitiated = false, startInFlight = false,
+                userUnlocked = true, canStartLocked = true
+            )
+        )
+    }
 }

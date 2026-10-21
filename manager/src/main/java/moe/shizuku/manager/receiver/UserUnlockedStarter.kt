@@ -4,14 +4,22 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.ktx.isUserUnlockedCompat
+import moe.shizuku.manager.service.LockedBootStartService
 import moe.shizuku.manager.service.WatchdogService
+import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.Diag
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Begins the boot start the moment the user unlocks, instead of when the system gets round to
@@ -83,13 +91,64 @@ object UserUnlockedStarter {
             StartNowDecision.SKIP_STOPPED ->
                 Diag.debug(TAG, "Start at unlock skipped: the service was stopped deliberately")
 
-            StartNowDecision.SKIP_NOT_WANTED, StartNowDecision.DEFER_UNTIL_UNLOCK -> Unit
+            StartNowDecision.SKIP_NOT_WANTED,
+            StartNowDecision.DEFER_UNTIL_UNLOCK,
+            StartNowDecision.START_LOCKED -> Unit
         }
+
+        // A start the foreground service began before the unlock is the better start while it is
+        // making progress, and the request above has joined it. When it is not, it is replaced.
+        watchLockedRun(context, SystemClock.elapsedRealtime())
 
         // The watchdog put a restart off until now ("Restart deferred until the user is unlocked").
         // Starting it again re-runs its probe, which joins the start above if there is one.
         if (ShizukuSettings.getWatchdog()) WatchdogService.start(context)
     }
+
+    private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Gives a start begun before the unlock [LOCKED_RUN_GRACE_MS] after it to reach STARTING, and
+     * replaces it with the ordinary start if it has not (see [decideLockedRunAtUnlock]).
+     *
+     * Everything that could ask for a start in the meantime joins the one in the service, so the
+     * single slot is held by it; this is what makes sure that holding it is not the same as having
+     * a start under way.
+     */
+    private fun watchLockedRun(context: Context, unlockedAt: Long) {
+        if (!LockedBootStartService.isRunning()) return
+        watchScope.launch {
+            while (true) {
+                val state = ShizukuStateMachine.get()
+                val decision = decideLockedRunAtUnlock(
+                    runInFlight = LockedBootStartService.isRunning(),
+                    reachedStarting = state == ShizukuStateMachine.State.STARTING ||
+                        state == ShizukuStateMachine.State.RUNNING,
+                    msSinceUnlock = SystemClock.elapsedRealtime() - unlockedAt
+                )
+                when (decision) {
+                    LockedRunAtUnlock.NONE, LockedRunAtUnlock.KEEP -> return@launch
+
+                    LockedRunAtUnlock.WAIT -> delay(WATCH_INTERVAL_MS)
+
+                    LockedRunAtUnlock.REPLACE -> {
+                        Diag.warn(
+                            TAG,
+                            "The start begun before the unlock has not reached STARTING " +
+                                "${LOCKED_RUN_GRACE_MS / 1000} s after it; starting normally" +
+                                BootTimeline.suffix()
+                        )
+                        LockedBootStartService.cancelRun("it did not reach STARTING in time") {
+                            ShizukuReceiverStarter.start(context, reason = "locked-start-stalled")
+                        }
+                        return@launch
+                    }
+                }
+            }
+        }
+    }
+
+    private const val WATCH_INTERVAL_MS = 500L
 
     /**
      * A process that started before the unlock may have no WorkManager: its initializer is a

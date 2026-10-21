@@ -244,7 +244,9 @@ class WatchdogService : Service() {
                 Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
                 return
             }
-            StartNowDecision.DEFER_UNTIL_UNLOCK -> {
+            // The watchdog does not ask for the start that can be made before the unlock (it passes
+            // no such method), so START_LOCKED is not an answer it gets; it waits like the rest.
+            StartNowDecision.DEFER_UNTIL_UNLOCK, StartNowDecision.START_LOCKED -> {
                 Diag.debug(TAG, "Restart deferred until the user is unlocked${BootTimeline.suffix()}")
                 pendingRestart = true
                 return
@@ -744,8 +746,25 @@ class WatchdogService : Service() {
                 // only exists from Android 8 (API 26), and a NoSuchMethodError is an Error the
                 // catch below cannot see. The compat helper falls back to startService on the
                 // platforms that predate it.
-                ContextCompat.startForegroundService(context, Intent(context, WatchdogService::class.java))
-                true
+                val started = ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, WatchdogService::class.java)
+                )
+                // Null is the platform saying there is no such service to start: this one is not
+                // direct-boot aware, so before the first unlock the process cannot see it ("Unable to
+                // start service ... U=0: not found"), and the call returns instead of throwing. Taking
+                // that for a start is how the alarm backstop and the log reported a watchdog that was
+                // never there.
+                if (started == null) {
+                    Diag.warn(
+                        "ShizukuApplication",
+                        "WatchdogService was not started: the platform did not find it" +
+                            if (context.isUserUnlockedCompat()) "" else " (the user has not unlocked yet)"
+                    )
+                    false
+                } else {
+                    true
+                }
             } catch (e: Exception) {
                 // ForegroundServiceStartNotAllowedException on Android 12+, which is an ordinary
                 // outcome for a background caller rather than an error in this app.

@@ -51,13 +51,17 @@ import moe.shizuku.manager.utils.Diag
  *   gates the request on the app being in the foreground.
  * @param onForcing called when the start begins asking for wireless debugging (forced only).
  * @param onWaitingForUnlock called when the network has to be authorized behind a lock screen.
+ * @param failFastOnHotspot give up at the first refusal of the hotspot (forced only), with the
+ *   reason as the failure [fresh] throws, instead of asking again and carrying on without one.
+ *   For a start that began before the unlock, where a refusal is likely to be the lock's.
  */
 class WirelessPortHunt(
     context: Context,
     private val forced: Boolean,
     private val promoteForHotspot: suspend () -> Unit = {},
     private val onForcing: () -> Unit = {},
-    private val onWaitingForUnlock: () -> Unit = {}
+    private val onWaitingForUnlock: () -> Unit = {},
+    private val failFastOnHotspot: Boolean = false
 ) {
 
     /**
@@ -194,7 +198,12 @@ class WirelessPortHunt(
             nudgeJob = scope.launch {
                 ForcedWirelessDebugging.nudge(
                     appContext,
-                    { message -> Diag.info(AppConstants.TAG, "Forced wireless debugging: $message") }
+                    { message -> Diag.info(AppConstants.TAG, "Forced wireless debugging: $message") },
+                    failFast = failFastOnHotspot,
+                    onFailFast = { reason ->
+                        Diag.warn(AppConstants.TAG, "Forced wireless debugging gave up: $reason")
+                        fail(IllegalStateException("the local-only hotspot was refused: $reason"))
+                    }
                 ) {
                     startDiscovery()
                 }

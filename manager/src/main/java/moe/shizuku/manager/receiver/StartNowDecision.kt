@@ -5,6 +5,12 @@ enum class StartNowDecision {
     /** Go ahead and ask for the start. */
     START,
 
+    /**
+     * The user has not unlocked the phone yet, and the start can be made without WorkManager: begin
+     * it now, in the foreground service that does not need credential storage.
+     */
+    START_LOCKED,
+
     /** The user has not unlocked the phone yet; ask again when they do. */
     DEFER_UNTIL_UNLOCK,
 
@@ -24,14 +30,31 @@ enum class StartNowDecision {
  * The unlock matters because the start goes through WorkManager, whose database lives in
  * credential-encrypted storage: before the first unlock there is nothing for it to read, and a
  * request made then is lost or fails rather than waiting its turn.
+ *
+ * Not for every start: a wireless one needs only what lives in device-protected storage and the
+ * system settings, and a foreground service that is direct-boot aware can make it before the
+ * unlock ([canStartLocked]). The others (USB, root, system) keep waiting for it.
  */
 internal fun decideStartNow(
     userUnlocked: Boolean,
     startWanted: Boolean,
-    manuallyStopped: Boolean
+    manuallyStopped: Boolean,
+    canStartLocked: Boolean = false
 ): StartNowDecision = when {
     manuallyStopped -> StartNowDecision.SKIP_STOPPED
     !startWanted -> StartNowDecision.SKIP_NOT_WANTED
+    !userUnlocked && canStartLocked -> StartNowDecision.START_LOCKED
     !userUnlocked -> StartNowDecision.DEFER_UNTIL_UNLOCK
     else -> StartNowDecision.START
 }
+
+/**
+ * Whether [method] can be started before the first unlock.
+ *
+ * Only the two wireless ones: what they use is the saved settings and key (device-protected
+ * storage), the system settings and the network. USB needs the person at the prompt, root and
+ * system start from places that are not there yet.
+ */
+internal fun canStartBeforeUnlock(method: Int): Boolean =
+    method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS ||
+        method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS_NO_NETWORK

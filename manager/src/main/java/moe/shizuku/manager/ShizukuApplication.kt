@@ -78,7 +78,10 @@ class ShizukuApplication : Application() {
         AppLocale.initialize(this)
         AppCompatDelegate.setDefaultNightMode(ShizukuSettings.getNightMode())
 
-        if(ShizukuSettings.getWatchdog()) WatchdogService.start(context)
+        // Not before the first unlock: the watchdog is not direct-boot aware, so a process that woke
+        // earlier cannot see the service (the platform answers "not found" and the call used to be
+        // counted as a start). UserUnlockedStarter starts it at the unlock instead.
+        if (ShizukuSettings.getWatchdog() && context.isUserUnlockedCompat()) WatchdogService.start(context)
         // A process that woke before the first unlock has no WorkManager to start with, so the
         // boot start is made at the unlock and not left for BOOT_COMPLETED to find.
         UserUnlockedStarter.registerIfLocked(context)

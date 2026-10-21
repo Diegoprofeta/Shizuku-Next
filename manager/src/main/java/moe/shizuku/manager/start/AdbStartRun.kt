@@ -54,7 +54,20 @@ import moe.shizuku.manager.utils.createChannelCompat
  * The count of attempts in flight is here too, because it is a fact about attempts and not about
  * the worker: a start is under way whichever host runs it.
  */
-class AdbStartRun(context: Context, private val host: Host) {
+class AdbStartRun(
+    context: Context,
+    private val host: Host,
+    /**
+     * Whether this attempt began before the first unlock, in the foreground service.
+     *
+     * What changes is how it fails. Before the unlock a failure is likely to be about the lock -
+     * a hotspot the platform will not give an app the user has not unlocked, a key it cannot read
+     * yet - and none of it is the user's to act on; it also leaves the way open for the start the
+     * unlock makes anyway. So the attempt gives up at the first refusal rather than spending
+     * minutes on it, says why in the log and nowhere else, and does not retry: see [execute].
+     */
+    private val lockedStart: Boolean = false
+) {
 
     /** What the host provides; the rest of the attempt does not care which host it is. */
     interface Host {
@@ -98,13 +111,19 @@ class AdbStartRun(context: Context, private val host: Host) {
 
     private fun notify(state: WorkerState) = host.notify(state)
 
-    /** Makes the attempt for [method] and says how it ended. */
-    suspend fun execute(method: Int): Outcome {
+    /**
+     * Makes the attempt for [method] and says how it ended.
+     *
+     * [reserved] means the caller already counted this attempt as in flight (see [reserveAttempt]),
+     * so that a request arriving between its decision to start and this call joins the attempt
+     * instead of starting another. The count is released here either way.
+     */
+    suspend fun execute(method: Int, reserved: Boolean = false): Outcome {
         requestedMethod = method
 
         // Set before the first thing this attempt does and cleared in the `finally`, so the whole
         // attempt counts as one. See [inFlight] for who reads it and why.
-        beginAttempt()
+        if (!reserved) beginAttempt()
 
         try {
             // A hiding list is holding a debugging toggle off for an app the user has open. Every
@@ -367,7 +386,8 @@ class AdbStartRun(context: Context, private val host: Host) {
                 forced = forcedWireless,
                 promoteForHotspot = { promoteForHotspot() },
                 onForcing = { notify(WorkerState.FORCING_WIRELESS) },
-                onWaitingForUnlock = { waitForUnlockInForeground() }
+                onWaitingForUnlock = { waitForUnlockInForeground() },
+                failFastOnHotspot = lockedStart
             )
             hunt = searchHunt
 
@@ -389,8 +409,11 @@ class AdbStartRun(context: Context, private val host: Host) {
                         // a 15 second deadline closed it moments after the hotspot had come up,
                         // which at boot is most of those 15 seconds gone on bringing the interface
                         // up in the first place. The clock starts when discovery does.
-                        val deadline =
-                            if (forcedWireless) FORCED_DISCOVERY_TIMEOUT_MS else 15_000L
+                        val deadline = when {
+                            lockedStart -> LOCKED_DISCOVERY_TIMEOUT_MS
+                            forcedWireless -> FORCED_DISCOVERY_TIMEOUT_MS
+                            else -> 15_000L
+                        }
                         searchHunt.fresh(emptySet(), deadline)
                             ?: throw TimeoutException("Timed out during mDNS port discovery")
                     } catch (e: TimeoutException) {
@@ -562,6 +585,18 @@ class AdbStartRun(context: Context, private val host: Host) {
 
             throw e
         } catch (e: Exception) {
+            if (lockedStart) {
+                // Nothing for the user to act on, and no notification to raise about it: the
+                // reason goes in the log, and the start the unlock makes (or the service's own
+                // follow-up, if the unlock has already come) is the retry.
+                Diag.warn(
+                    AppConstants.TAG,
+                    "The start before the unlock gave up: ${e.message ?: e.javaClass.simpleName}",
+                    e
+                )
+                ShizukuStateMachine.markStartFailed()
+                return Outcome.RETRY
+            }
             // Surface the reason in the app; the worker may still retry.
             val (message, kind) = when (e) {
                 is AdbPairingRequiredException ->
@@ -864,6 +899,17 @@ class AdbStartRun(context: Context, private val host: Host) {
             )
         }
 
+        /**
+         * Counts an attempt as in flight before it has begun, for a host that needs time between
+         * deciding to start and running: the foreground service is asked for and starts a moment
+         * later, and a request that arrived in that moment saw nothing under way and began a
+         * second start beside it.
+         */
+        fun reserveAttempt() = beginAttempt()
+
+        /** Gives back a reservation whose attempt is never going to run. */
+        fun releaseReservation() = endAttempt()
+
         private fun beginAttempt() {
             if (inFlightCount.getAndIncrement() == 0) inFlightSince = SystemClock.elapsedRealtime()
         }
@@ -880,6 +926,15 @@ class AdbStartRun(context: Context, private val host: Host) {
          * both see it through rather than being cut off with the attempt.
          */
         private const val FORCED_DISCOVERY_TIMEOUT_MS = 130_000L
+
+        /**
+         * How long an attempt begun before the unlock searches for a port. The long window above
+         * exists for a framework that keeps switching wireless debugging off and has to be caught
+         * in a moment it does not; a search that finds nothing in this time before the unlock is
+         * more likely stuck on the lock than about to find it, and the unlock begins an ordinary
+         * start in any case. To be checked on a device: an estimate, not a measurement.
+         */
+        private const val LOCKED_DISCOVERY_TIMEOUT_MS = 30_000L
 
         /** How long to give adbd to come back in TCP mode before saying what the port reads. */
         private const val TCP_PORT_READBACK_TIMEOUT_MS = 3000L

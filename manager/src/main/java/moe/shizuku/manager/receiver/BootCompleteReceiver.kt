@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.service.WatchdogService
 import moe.shizuku.manager.start.reapplyAdbWithoutDeveloperOptionsIfEnabled
 import moe.shizuku.manager.utils.BootTimeline
@@ -20,10 +21,16 @@ class BootCompleteReceiver : BroadcastReceiver() {
     /**
      * The first signal of a boot, delivered before the user has unlocked.
      *
-     * Nothing here asks for a start: that goes through WorkManager, whose database is in storage
-     * that is still locked. What can be done is to get the process and the watchdog up as early as
-     * possible, so that both are already waiting when the unlock comes (see [UserUnlockedStarter])
-     * rather than being woken by BOOT_COMPLETED some seconds after it.
+     * A wireless start is begun here, in [LockedBootStartService]: it needs the saved settings and
+     * key (device-protected storage), the system settings and the network, none of which wait for
+     * the unlock, and it goes through no WorkManager, whose database does. Every other method keeps
+     * waiting for the unlock, which [UserUnlockedStarter] is registered for. The start is asked for
+     * through [ShizukuReceiverStarter] like any other, so that it is one start at a time and shows
+     * up in the log as a request with a reason.
+     *
+     * The watchdog is not started here: it is not direct-boot aware, so the platform cannot find it
+     * before the unlock. [UserUnlockedStarter] starts it then, and the alarm backstop below is the
+     * one thing of the watchdog's that can be armed now.
      */
     private fun onLockedBoot(context: Context) {
         Diag.info(TAG, "Locked boot completed received${BootTimeline.suffix()}")
@@ -32,7 +39,27 @@ class BootCompleteReceiver : BroadcastReceiver() {
         // depend on the unlock, and the toggles they put back are what a start needs first.
         reapplyAdbWithoutDeveloperOptionsIfEnabled(context)
 
-        if (ShizukuSettings.getWatchdog()) WatchdogService.start(context)
+        val startOnBoot = ShizukuSettings.getStartOnBoot(context)
+        when (decideStartNow(
+            userUnlocked = context.isUserUnlockedCompat(),
+            startWanted = startOnBoot,
+            manuallyStopped = ShizukuSettings.getManuallyStopped(),
+            canStartLocked = canStartBeforeUnlock(ShizukuSettings.getStartMethod())
+        )) {
+            StartNowDecision.START_LOCKED ->
+                ShizukuReceiverStarter.start(context, reason = "locked-boot")
+
+            StartNowDecision.SKIP_STOPPED ->
+                Diag.info(TAG, "Start before the unlock skipped: the service was stopped deliberately")
+
+            StartNowDecision.SKIP_NOT_WANTED ->
+                Diag.info(TAG, "Start before the unlock skipped: start on boot is off")
+
+            // The method needs the unlock (or the user unlocked already, and BOOT_COMPLETED is
+            // about to ask): nothing to do here.
+            StartNowDecision.DEFER_UNTIL_UNLOCK, StartNowDecision.START -> Unit
+        }
+
         WatchdogAlarmReceiver.schedule(context)
     }
 
