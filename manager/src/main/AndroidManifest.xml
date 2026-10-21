@@ -331,8 +331,15 @@
             android:directBootAware="true"
             android:enabled="false"
             android:exported="true">
-            <intent-filter>
+            <!-- Apart from BOOT_COMPLETED so that only this one carries a priority. The boot
+                 broadcasts go to receivers in priority order, and the locked one is where the start
+                 begins now: being earlier in that order is earlier by however long the receivers
+                 ahead of it take. How much that is cannot be known without a device; the log line
+                 "Process started, +X s since boot" measures it. -->
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+            <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
