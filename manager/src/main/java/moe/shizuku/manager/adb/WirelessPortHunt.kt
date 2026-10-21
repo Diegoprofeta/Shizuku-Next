@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.annotation.RequiresApi
 import java.util.concurrent.TimeoutException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -78,8 +79,12 @@ class WirelessPortHunt(
     private val cr = appContext.contentResolver
     private val state = MutableStateFlow(State())
 
-    // Owned by the hunt, and cancelled by [close]: the nudge outlives any one call to [fresh].
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Owned by the hunt, and cancelled by [close]: the nudge outlives any one call to [fresh]. What it
+    // throws ends the hunt (see [fresh]) instead of reaching the thread's handler, which would take
+    // the app down for a hotspot that misbehaved.
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> fail(e) }
+    )
     private val startMutex = Mutex()
     private val lock = Any()
 
@@ -109,6 +114,9 @@ class WirelessPortHunt(
         while (true) {
             // Not under the timeout: the clock starts when a search is running (for the experiment,
             // after the hotspot attempt, which can take longer than the whole window would).
+            // Unbounded, as the discovery deadline always was while the network waited to be
+            // authorized: that wait can be as long as it takes somebody to unlock the phone. A
+            // hotspot that goes wrong ends it through [failure], not through running out of time.
             state.first { it.discovering || it.failure != null || usable(it.port, exclude) }
             val reached = withTimeoutOrNull(timeoutMs) {
                 state.first { it.failure != null || !it.discovering || usable(it.port, exclude) }
@@ -118,9 +126,6 @@ class WirelessPortHunt(
             // Paused for authorization; wait for the search to run again.
         }
     }
-
-    /** The latest port resolved so far, or 0, without waiting. */
-    val latest: Int get() = state.value.port
 
     private fun usable(port: Int, exclude: Set<Int>) = port > 0 && port !in exclude
 
@@ -181,6 +186,11 @@ class WirelessPortHunt(
         // before we complain.
         appContext.writeGlobalSetting("adb_wifi_enabled", 1)
         cr.registerContentObserver(Settings.Global.getUriFor("adb_wifi_enabled"), false, watcher)
+        // Closed while this was setting up: close() could not have seen the observer registered.
+        if (closed) {
+            runCatching { cr.unregisterContentObserver(watcher) }
+            return
+        }
 
         // Opt-in: keep asking for wireless debugging the way the Settings toggle cannot be asked
         // when the device has no network, and bring up an interface for discovery if asking is not
