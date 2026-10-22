@@ -130,7 +130,21 @@ public final class UsersCompat {
             return null;
         }
         try {
-            Method method = um.getClass().getMethod("isUserUnlocked", int.class);
+            // The object `IUserManager$Stub.asInterface` returns is a package-private proxy, and
+            // a public method declared on one is not callable from here: reflection refuses it
+            // with an access error, which the catch below would report as "cannot tell". The
+            // interface the proxy implements is public, so the method is looked up there when
+            // the platform has it, and the proxy class remains the fallback.
+            Class<?> owner = um.getClass();
+            try {
+                Class<?> iface = Class.forName("android.os.IUserManager");
+                if (iface.isInstance(um)) {
+                    owner = iface;
+                }
+            } catch (Throwable ignored) {
+                // No such interface on this platform: nothing to prefer over the proxy class.
+            }
+            Method method = owner.getMethod("isUserUnlocked", int.class);
             Object result = method.invoke(um, userId);
             return result instanceof Boolean ? (Boolean) result : null;
         } catch (Throwable tr) {
