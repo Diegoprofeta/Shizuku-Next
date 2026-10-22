@@ -247,7 +247,10 @@ object ShizukuReceiverStarter {
         // is held up, and only because it cannot be done without the permission.
         if (context.needsWriteSecureSettingsFor(startMethod) && !context.hasWriteSecureSettings()) {
             StartStatusReporter.failed(
-                context.getString(R.string.start_failed_write_secure_settings),
+                context.getString(
+                    R.string.start_failed_write_secure_settings,
+                    context.packageName
+                ),
                 // The card opens Wireless debugging so the user can switch it on by hand 
                 // the permission is only how the app would have done it for them.
                 StartFailureKind.SETTINGS

@@ -97,7 +97,9 @@ private fun Context.showEnableDialog() {
 private fun Context.pairingEnableMessage(): CharSequence {
     val command = "adb shell cmd appops set $packageName ACCESS_RESTRICTED_SETTINGS allow"
     val text = buildString {
-        append(getString(R.string.dialog_adb_pairing_accessibility_enable))
+        // The package as it is installed now, not the one it was built as: a hidden copy is
+        // told to grant a name that is not installed otherwise, and the command fails.
+        append(getString(R.string.dialog_adb_pairing_accessibility_enable, packageName))
         append("\n\n")
         append(
             getString(R.string.dialog_adb_pairing_accessibility_permission)

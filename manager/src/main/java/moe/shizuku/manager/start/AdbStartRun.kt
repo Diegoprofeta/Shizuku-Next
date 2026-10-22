@@ -611,7 +611,10 @@ class AdbStartRun(
                             R.string.start_failed_no_port
                         } else {
                             R.string.start_failed_no_port_no_permission
-                        }
+                        },
+                        // The name the app is installed under now: a hidden copy told to
+                        // grant the build-time name is told about a package that is not there.
+                        applicationContext.packageName
                     ) to StartFailureKind.GENERIC
 
                 is SecurityException ->
