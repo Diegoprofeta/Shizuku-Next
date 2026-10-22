@@ -135,8 +135,18 @@ public class ShizukuConfigManager extends ConfigManager {
         // whose list cannot be read answers with an empty list, the same as a user with nothing
         // installed, so only a non-empty one counts as having read anything.
         Map<Integer, List<PackageInfo>> installed = new LinkedHashMap<>();
-        listedWhileLocked = Boolean.FALSE.equals(UsersCompat.isUserUnlocked(0));
+        // Each user's unlock state is sampled immediately before its own listing, and what was
+        // seen then is what the cleanup below uses. Asked again later, a user that unlocked in
+        // between would read as unlocked while the list it gave was the direct-boot-only one, and
+        // the cleanup would take the grant away from every app that is not direct-boot aware.
+        Boolean user0Unlocked = UsersCompat.isUserUnlocked(0);
+        listedWhileLocked = Boolean.FALSE.equals(user0Unlocked);
+        Map<Integer, Boolean> unlockedAtListing = new LinkedHashMap<>();
+        unlockedAtListing.put(0, user0Unlocked);
         for (int userId : UsersCompat.getUserIdsNoThrow()) {
+            if (userId != 0) {
+                unlockedAtListing.put(userId, UsersCompat.isUserUnlocked(userId));
+            }
             ServerLog.phase("listing packages of user " + userId);
             List<PackageInfo> forUser = InstalledPackagesCompat.getInstalledPackagesNoThrow(PackageManager.GET_PERMISSIONS, userId);
             ServerLog.phase("listed " + forUser.size() + " packages of user " + userId);
@@ -161,7 +171,9 @@ public class ShizukuConfigManager extends ConfigManager {
             int entryUser = entry.uid / PER_USER_RANGE;
             Boolean believed = believable.get(entryUser);
             if (believed == null) {
-                Boolean unlocked = UsersCompat.isUserUnlocked(entryUser);
+                // The state that was true when this user's packages were listed, not the state
+                // now: an unlock in between makes the partial list look complete.
+                Boolean unlocked = unlockedAtListing.get(entryUser);
                 believed = Boolean.TRUE.equals(unlocked);
                 believable.put(entryUser, believed);
                 if (!believed) {
