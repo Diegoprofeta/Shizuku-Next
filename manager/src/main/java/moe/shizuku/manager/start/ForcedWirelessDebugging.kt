@@ -89,6 +89,10 @@ object ForcedWirelessDebugging {
     @Volatile
     private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
 
+    /** Why the last hotspot request failed, in words; read when a start gives up on the first. */
+    @Volatile
+    private var lastRefusal: String? = null
+
     /**
      * Asks for wireless debugging until cancelled, standing in for the toggle that a
      * device without a network is not allowed to use.
@@ -100,6 +104,16 @@ object ForcedWirelessDebugging {
     suspend fun nudge(
         context: Context,
         log: (String) -> Unit = {},
+        /**
+         * Give up when the hotspot is refused, instead of asking again and carrying on without one.
+         *
+         * For a start that began before the unlock, where the refusal is likely to be the lock's:
+         * one request, no retries, and the reason handed to [onFailFast] with nothing else done -
+         * neither discovery nor the asking for wireless debugging is started, since the caller is
+         * about to end the attempt.
+         */
+        failFast: Boolean = false,
+        onFailFast: (String) -> Unit = {},
         /**
          * Called once the hotspot attempt is over, whether it came up or not.
          *
@@ -117,7 +131,11 @@ object ForcedWirelessDebugging {
         // framework to leave wireless debugging alone, and on the rest it is what lets the
         // daemon keep its port, so there is nothing to gain by spending the first seconds
         // of an attempt that may be short asking without one.
-        startHotspot(context, log)
+        val hotspotUp = startHotspot(context, log, if (failFast) 1 else HOTSPOT_ATTEMPTS)
+        if (!hotspotUp && failFast) {
+            onFailFast(lastRefusal ?: "no hotspot")
+            return@withContext
+        }
         onHotspotSettled()
 
         // Every pass reads before it writes, which is the whole of what issue #79 needed: a write
@@ -194,7 +212,11 @@ object ForcedWirelessDebugging {
      * The reservation has to be held for the hotspot to exist, so it is parked in this
      * object; it also dies with the process, which is a fair fallback.
      */
-    private suspend fun startHotspot(context: Context, log: (String) -> Unit): Boolean {
+    private suspend fun startHotspot(
+        context: Context,
+        log: (String) -> Unit,
+        attempts: Int = HOTSPOT_ATTEMPTS
+    ): Boolean {
         // The local-only hotspot arrived with Android 8 (API 26) and the class it is held in
         // does not exist below it. The experiment that reaches this is only ever useful on a
         // modern platform anyway, so on an older one there is nothing to try, and that is what
@@ -211,14 +233,15 @@ object ForcedWirelessDebugging {
             return false
         }
 
-        repeat(HOTSPOT_ATTEMPTS) { attempt ->
-            val started = attemptHotspot(wifi, attempt)
+        lastRefusal = null
+        repeat(attempts) { attempt ->
+            val started = attemptHotspot(wifi, attempt, attempts)
             if (started != null) {
                 reservation = started
                 log("local-only hotspot is up")
                 return true
             }
-            if (attempt < HOTSPOT_ATTEMPTS - 1) delay(HOTSPOT_RETRY_DELAY_MS)
+            if (attempt < attempts - 1) delay(HOTSPOT_RETRY_DELAY_MS)
         }
 
         log("the local-only hotspot did not come up")
@@ -229,7 +252,8 @@ object ForcedWirelessDebugging {
     @RequiresApi(Build.VERSION_CODES.O)
     private suspend fun attemptHotspot(
         wifi: WifiManager,
-        attempt: Int
+        attempt: Int,
+        attempts: Int
     ): WifiManager.LocalOnlyHotspotReservation? {
         var reason: Int? = null
         val started = withTimeoutOrNull(HOTSPOT_TIMEOUT_MS) {
@@ -258,6 +282,7 @@ object ForcedWirelessDebugging {
                         // anything else the platform throws at this: the start carries on
                         // without the interface.
                         Diag.warn(AppConstants.TAG, "Could not start a local-only hotspot", e)
+                        lastRefusal = "${e.javaClass.simpleName}: ${e.message}"
                         if (cont.isActive) cont.resume(null)
                     }
                 }
@@ -267,16 +292,16 @@ object ForcedWirelessDebugging {
         when {
             reason != null -> Diag.warn(
                 AppConstants.TAG,
-                "Local-only hotspot refused (attempt ${attempt + 1} of $HOTSPOT_ATTEMPTS): " +
-                    reasonName(reason!!)
+                "Local-only hotspot refused (attempt ${attempt + 1} of $attempts): " +
+                    reasonName(reason!!).also { lastRefusal = it }
             )
             // Silence would look the same as a refusal in the log, and the difference
             // matters: a call that never answers means the Wi-Fi stack was not ready yet.
             started == null -> Diag.warn(
                 AppConstants.TAG,
                 "Local-only hotspot did not answer within ${HOTSPOT_TIMEOUT_MS / 1000}s " +
-                    "(attempt ${attempt + 1} of $HOTSPOT_ATTEMPTS)"
-            )
+                    "(attempt ${attempt + 1} of $attempts)"
+            ).also { lastRefusal = "no answer within ${HOTSPOT_TIMEOUT_MS / 1000}s" }
         }
         return started
     }

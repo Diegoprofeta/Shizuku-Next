@@ -5,6 +5,12 @@ enum class StartDecision {
     /** Go ahead and start. */
     START,
 
+    /** Go ahead and start, before the unlock: in the foreground service, never in WorkManager. */
+    START_LOCKED,
+
+    /** The start cannot be made before the unlock; the unlock asks for it again. */
+    DEFER_UNTIL_UNLOCK,
+
     /** The server is up and nothing asked to replace it. */
     IGNORE_RUNNING,
 
@@ -20,14 +26,24 @@ enum class StartDecision {
  * starts and a boot's start arrive in the same few seconds after a boot, and each queued work
  * that cancelled the last - but cancelling a start does not stop the command it has already sent,
  * so the two ran side by side and the second one's starter killed the first one's server.
+ *
+ * Before the first unlock nothing here may reach WorkManager, whose database is in storage that is
+ * not readable yet. A start that can be made without it ([canStartLocked]) is made in the
+ * foreground service ([StartDecision.START_LOCKED]); one that cannot waits for the unlock.
+ * [userUnlocked] and [canStartLocked] default to the answers that leave every earlier decision as
+ * it was.
  */
 internal fun decideStart(
     binderAlive: Boolean,
     forceStart: Boolean,
     userInitiated: Boolean,
-    startInFlight: Boolean
+    startInFlight: Boolean,
+    userUnlocked: Boolean = true,
+    canStartLocked: Boolean = false
 ): StartDecision = when {
     binderAlive && !forceStart -> StartDecision.IGNORE_RUNNING
     startInFlight && !(forceStart && userInitiated) -> StartDecision.JOIN_IN_FLIGHT
+    !userUnlocked && canStartLocked -> StartDecision.START_LOCKED
+    !userUnlocked -> StartDecision.DEFER_UNTIL_UNLOCK
     else -> StartDecision.START
 }

@@ -30,25 +30,53 @@ public final class InstalledPackagesCompat {
 
     @SuppressWarnings("unchecked")
     public static List<PackageInfo> getInstalledPackages(long flags, int userId) throws ReflectiveOperationException {
-        try {
-            Object packageManager = getContextPackageManager();
-            Method method = packageManager.getClass().getMethod("getInstalledPackagesAsUser", int.class, int.class);
-            Object result = invoke(method, packageManager, (int) flags, userId);
-            return result == null ? Collections.emptyList() : (List<PackageInfo>) result;
-        } catch (NoSuchMethodException ignored) {
-        } catch (Exception e) {
-            Log.d(TAG, "getInstalledPackagesAsUser failed, falling back to hidden API", e);
+        // A process with an Application has a context and so a package manager of its own, and that
+        // is the cheap way to the answer. A process without one - this server, a bare app_process -
+        // has to build a system context first, which means ActivityThread.systemMain(): a
+        // Resources and an overlay configuration, over a second of a loaded phone's time at start-up
+        // measured in the server's log (service_manager_slow, idmap2, OverlayConfig) - for a list
+        // that the package manager service hands out directly. So there the service is asked first,
+        // and the system context is the way out only if it will not answer. The caller is the same
+        // uid either way, and the list is the same.
+        Object applicationPackageManager = applicationPackageManagerOrNull();
+        if (applicationPackageManager != null) {
+            try {
+                return viaPackageManagerObject(applicationPackageManager, flags, userId);
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "getInstalledPackagesAsUser failed, falling back to hidden API", e);
+            }
+            return viaHiddenService(flags, userId);
         }
 
+        try {
+            return viaHiddenService(flags, userId);
+        } catch (Exception e) {
+            Log.d(TAG, "the package manager service would not list packages, trying a system context", e);
+        }
+        return viaPackageManagerObject(getSystemContextPackageManager(), flags, userId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<PackageInfo> viaPackageManagerObject(Object packageManager, long flags, int userId)
+            throws ReflectiveOperationException {
+        Method method = packageManager.getClass().getMethod("getInstalledPackagesAsUser", int.class, int.class);
+        Object result = invoke(method, packageManager, (int) flags, userId);
+        return result == null ? Collections.emptyList() : (List<PackageInfo>) result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<PackageInfo> viaHiddenService(long flags, int userId) throws ReflectiveOperationException {
         Object packageManager = getPackageManager();
+        Class<?> owner = packageManagerInterface(packageManager);
         Method method;
         Object result;
 
         if (Build.VERSION.SDK_INT >= ANDROID_13) {
-            method = packageManager.getClass().getMethod("getInstalledPackages", long.class, int.class);
+            method = owner.getMethod("getInstalledPackages", long.class, int.class);
             result = invoke(method, packageManager, flags, userId);
         } else {
-            method = packageManager.getClass().getMethod("getInstalledPackages", int.class, int.class);
+            method = owner.getMethod("getInstalledPackages", int.class, int.class);
             result = invoke(method, packageManager, (int) flags, userId);
         }
 
@@ -65,6 +93,22 @@ public final class InstalledPackagesCompat {
         throw new IllegalStateException("Unsupported getInstalledPackages return type: " + resultClassName);
     }
 
+    /**
+     * The class to look the method up on: the interface when the object implements it, otherwise
+     * the object's own class. A binder proxy is a private nested class, and a method found on it
+     * cannot be invoked from here, where the interface's is a public one the proxy answers to.
+     */
+    private static Class<?> packageManagerInterface(Object packageManager) {
+        try {
+            Class<?> iface = Class.forName("android.content.pm.IPackageManager");
+            if (iface.isInstance(packageManager)) {
+                return iface;
+            }
+        } catch (ClassNotFoundException ignored) {
+        }
+        return packageManager.getClass();
+    }
+
     private static Object getPackageManager() throws ReflectiveOperationException {
         Class<?> servicesClass = Class.forName("rikka.hidden.compat.Services");
         var field = servicesClass.getDeclaredField("packageManager");
@@ -73,7 +117,8 @@ public final class InstalledPackagesCompat {
         return service.getClass().getMethod("get").invoke(service);
     }
 
-    private static Object getContextPackageManager() throws ReflectiveOperationException {
+    /** The package manager of the Application this process has, or null when it has none. */
+    private static Object applicationPackageManagerOrNull() throws ReflectiveOperationException {
         Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
         Object activityThread = activityThreadClass.getMethod("currentActivityThread").invoke(null);
         if (activityThread != null) {
@@ -82,8 +127,13 @@ public final class InstalledPackagesCompat {
                 return application.getClass().getMethod("getPackageManager").invoke(application);
             }
         }
+        return null;
+    }
 
-        activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
+    /** The package manager of a system context, which has to be built: the expensive way. */
+    private static Object getSystemContextPackageManager() throws ReflectiveOperationException {
+        Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
+        Object activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
         Object systemContext = activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
         return systemContext.getClass().getMethod("getPackageManager").invoke(systemContext);
     }

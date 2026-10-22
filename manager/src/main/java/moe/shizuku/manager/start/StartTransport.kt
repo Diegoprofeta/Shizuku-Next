@@ -81,4 +81,81 @@ object StartTransport {
      */
     fun portCandidates(configured: Int, lastStart: Int, appTcpPort: Int): List<Int> =
         listOf(configured, lastStart, appTcpPort).filter { it > 0 }.distinct()
+
+    /**
+     * Where a candidate port came from, for the log: a port that fails is only useful to read about
+     * when the line also says which of the guesses it was.
+     */
+    enum class PortSource(val label: String) {
+        CLASSIC_PROPERTY("classic port property"),
+        TLS_PROPERTY("service.adb.tls.port"),
+        REMEMBERED("remembered from the last start"),
+        APP_SETTING("TCP port setting"),
+        MDNS("mDNS")
+    }
+
+    /** One port worth asking, and the guess that named it. */
+    data class PortCandidate(val port: Int, val source: PortSource)
+
+    /** What [rememberedPortVerdict] makes of the port the last start recorded. */
+    enum class RememberedPort {
+        /** Worth asking. */
+        USABLE,
+
+        /** Nothing was recorded. */
+        NONE,
+
+        /** A wireless port, recorded in an earlier boot than this one. */
+        OTHER_BOOT,
+
+        /** A wireless port, and either boot is unknown, so it cannot be told to be this one's. */
+        UNKNOWN_BOOT
+    }
+
+    /**
+     * Whether the port the last start reached adbd on can still be the port adbd listens on.
+     *
+     * A classic port is a number the app or the user chose, and it comes back with TCP mode on every
+     * boot, so it stays a candidate. A wireless (TLS) port is drawn at random whenever adbd brings
+     * its wireless server up, and that happens at every boot: one recorded in an earlier boot is
+     * stale by definition, and the log of the phone that reported this showed exactly that, a first
+     * attempt on port 36371 that the new boot had never opened. It is judged by the boot it was
+     * recorded in rather than by asking it, because a stale port can be taken by anything else.
+     *
+     * [lastBoot] and [currentBoot] are the platform's boot counts, -1 where unknown. A wireless port
+     * with no recorded boot (one saved by a version before this existed) is not trusted either.
+     */
+    fun rememberedPortVerdict(
+        lastPort: Int,
+        lastWasClassic: Boolean,
+        lastBoot: Int,
+        currentBoot: Int,
+        appTcpPort: Int
+    ): RememberedPort = when {
+        lastPort <= 0 -> RememberedPort.NONE
+        lastWasClassic || lastPort == appTcpPort -> RememberedPort.USABLE
+        lastBoot <= 0 || currentBoot <= 0 -> RememberedPort.UNKNOWN_BOOT
+        lastBoot != currentBoot -> RememberedPort.OTHER_BOOT
+        else -> RememberedPort.USABLE
+    }
+
+    /**
+     * The ports a start asks before it searches, in order, each with the guess that named it.
+     *
+     * Same order and the same cleaning as [portCandidates]; what is new is the TLS port the platform
+     * names itself ([tlsProperty], current by construction: it is cleared with the daemon) and that
+     * [remembered] is passed in already judged by [rememberedPortVerdict] (null when it was not
+     * usable). A port that two guesses agree on is asked once, under the first.
+     */
+    fun candidatePorts(
+        configured: Int,
+        tlsProperty: Int,
+        remembered: Int?,
+        appTcpPort: Int
+    ): List<PortCandidate> = listOf(
+        PortCandidate(configured, PortSource.CLASSIC_PROPERTY),
+        PortCandidate(tlsProperty, PortSource.TLS_PROPERTY),
+        PortCandidate(remembered ?: -1, PortSource.REMEMBERED),
+        PortCandidate(appTcpPort, PortSource.APP_SETTING)
+    ).filter { it.port > 0 }.distinctBy { it.port }
 }

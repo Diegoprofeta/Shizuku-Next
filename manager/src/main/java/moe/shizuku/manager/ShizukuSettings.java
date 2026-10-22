@@ -53,6 +53,9 @@ public class ShizukuSettings {
 
         /** The port a start last reached adbd on, whatever kind of port it was. */
         public static final String KEY_LAST_ADB_PORT = "last_adb_port";
+
+        /** The boot the port above was recorded in: a wireless port is only good for that boot. */
+        public static final String KEY_LAST_ADB_PORT_BOOT = "last_adb_port_boot";
         public static final String KEY_START_METHOD = "start_method";
         public static final String KEY_RUNNING_START_METHOD = "running_start_method";
         public static final String KEY_WAIT_FOR_WIFI = "wait_for_wifi";
@@ -383,6 +386,18 @@ public class ShizukuSettings {
 
     public static void setLastAdbPort(int port) {
         getPreferences().edit().putInt(Keys.KEY_LAST_ADB_PORT, port).apply();
+    }
+
+    /**
+     * The platform's boot count at the time {@link #getLastAdbPort()} was recorded, or -1 when it
+     * was not (a port saved by a version before this existed, or a platform without the count).
+     */
+    public static int getLastAdbPortBoot() {
+        return getPreferences().getInt(Keys.KEY_LAST_ADB_PORT_BOOT, -1);
+    }
+
+    public static void setLastAdbPortBoot(int bootCount) {
+        getPreferences().edit().putInt(Keys.KEY_LAST_ADB_PORT_BOOT, bootCount).apply();
     }
 
     /**

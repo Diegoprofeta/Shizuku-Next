@@ -109,7 +109,18 @@ public class ShizukuConfigManager extends ConfigManager {
 
     private final ShizukuConfig config;
 
+    /**
+     * What this device had installed when the config was read, handed on once to whoever lists the
+     * same packages next ([takeInstalledSnapshot]): the server listed them twice in a row at
+     * start-up, the second time to find the apps to give the binder to.
+     */
+    private Map<Integer, List<PackageInfo>> installedSnapshot;
+
+    /** Whether user 0 had not unlocked when the packages were listed, so the list is the partial one. */
+    private boolean listedWhileLocked;
+
     public ShizukuConfigManager() {
+        ServerLog.phase("ShizukuConfigManager: start");
         this.config = load();
 
         boolean changed = false;
@@ -124,13 +135,43 @@ public class ShizukuConfigManager extends ConfigManager {
         // whose list cannot be read answers with an empty list, the same as a user with nothing
         // installed, so only a non-empty one counts as having read anything.
         Map<Integer, List<PackageInfo>> installed = new LinkedHashMap<>();
+        listedWhileLocked = Boolean.FALSE.equals(UsersCompat.isUserUnlocked(0));
         for (int userId : UsersCompat.getUserIdsNoThrow()) {
-            installed.put(userId, InstalledPackagesCompat.getInstalledPackagesNoThrow(PackageManager.GET_PERMISSIONS, userId));
+            ServerLog.phase("listing packages of user " + userId);
+            List<PackageInfo> forUser = InstalledPackagesCompat.getInstalledPackagesNoThrow(PackageManager.GET_PERMISSIONS, userId);
+            ServerLog.phase("listed " + forUser.size() + " packages of user " + userId);
+            installed.put(userId, forUser);
         }
+        installedSnapshot = installed;
+
+        // Which users can be believed about what they have installed. Before a user's first unlock
+        // the package manager lists only the apps that are direct-boot aware, and every other app
+        // reads as not installed - which is exactly what the loop below acts on by removing the
+        // record, and the record is the grant. A server started before the unlock (the manager
+        // starts it there, to have it up when the PIN is typed) would have taken the permission away
+        // from every app that is not direct-boot aware. So no record of a user that is not known to
+        // be unlocked is removed; the next start, after the unlock, does the clean-up.
+        Map<Integer, Boolean> believable = new LinkedHashMap<>();
 
         for (ShizukuConfig.PackageEntry entry : new ArrayList<>(config.packages)) {
             if (entry.packages == null) {
                 entry.packages = new ArrayList<>();
+            }
+
+            int entryUser = entry.uid / PER_USER_RANGE;
+            Boolean believed = believable.get(entryUser);
+            if (believed == null) {
+                Boolean unlocked = UsersCompat.isUserUnlocked(entryUser);
+                believed = Boolean.TRUE.equals(unlocked);
+                believable.put(entryUser, believed);
+                if (!believed) {
+                    ServerLog.mark("user " + entryUser + " is "
+                            + (unlocked == null ? "not known to be unlocked" : "locked")
+                            + ": its permission records are kept as they are, and the clean-up is put off to a later start");
+                }
+            }
+            if (!believed) {
+                continue;
             }
 
             Set<String> packages = packagesStillThere(entry.uid, installed);
@@ -203,6 +244,23 @@ public class ShizukuConfigManager extends ConfigManager {
         if (changed) {
             scheduleWriteLocked();
         }
+        ServerLog.phase("ShizukuConfigManager: done");
+    }
+
+    /** Whether the packages were listed before user 0 had unlocked, which makes the list a partial one. */
+    public boolean wasListedWhileLocked() {
+        return listedWhileLocked;
+    }
+
+    /**
+     * The installed packages read when the config was loaded, once; null if there are none or they
+     * were already taken. Per user, and an empty list for a user means it could not be read.
+     */
+    @Nullable
+    public synchronized Map<Integer, List<PackageInfo>> takeInstalledSnapshot() {
+        Map<Integer, List<PackageInfo>> snapshot = installedSnapshot;
+        installedSnapshot = null;
+        return snapshot;
     }
 
     /**

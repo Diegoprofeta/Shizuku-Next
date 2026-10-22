@@ -31,6 +31,7 @@ import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -40,7 +41,9 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
 
@@ -96,7 +99,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     public static void main(String[] args) {
         // First, and before anything can fail: from here on the manager can read what this
         // process did, which it otherwise cannot tell apart from the server never running.
-        ServerLog.mark("main entered, uid=" + Process.myUid() + ", sdk=" + Build.VERSION.SDK_INT);
+        ServerLog.phase("main entered, uid=" + Process.myUid() + ", sdk=" + Build.VERSION.SDK_INT);
 
         try {
             DdmHandleAppName.setAppName("shizuku_server", 0);
@@ -104,7 +107,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
             Looper.prepareMainLooper();
             new ShizukuService();
-            ServerLog.mark("service created, entering the main looper");
+            ServerLog.phase("service created, entering the main looper");
 
             Looper.loop();
         } catch (Throwable tr) {
@@ -143,11 +146,13 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
         HandlerUtil.setMainHandler(mainHandler);
 
         LOGGER.i("starting server...");
+        ServerLog.phase("starting server");
 
         waitSystemService("package");
         waitSystemService(Context.ACTIVITY_SERVICE);
         waitSystemService(Context.USER_SERVICE);
         waitSystemService(Context.APP_OPS_SERVICE);
+        ServerLog.phase("system services are up");
 
         ApplicationInfo ai = getManagerApplicationInfo();
         if (ai == null) {
@@ -169,11 +174,69 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
         BinderSender.register(this);
 
+        // The manager first. It is the one waiting on the start screen, and the clients are only
+        // reached after listing every package that asks for the permission and starting the provider
+        // of each, which on a phone with many of them is the longer part. Nothing depends on the
+        // order: the two are independent hand-overs, and the manager is among the packages the
+        // clients' pass lists as well.
         mainHandler.post(() -> {
-            sendBinderToClient();
+            ServerLog.phase("handing the binder to the manager");
             sendBinderToManager();
+            ServerLog.phase("handed the binder to the manager");
+            ServerLog.phase("handing the binder to the clients");
+            sendBinderToClient();
+            ServerLog.phase("handed the binder to the clients");
+            scheduleBinderSweepAfterUnlock();
         });
     }
+
+    /**
+     * When the user had not unlocked at start-up, hands the binder to the clients again once they
+     * do.
+     *
+     * Before the unlock the package manager lists only direct-boot aware apps, and the provider of
+     * an app that is not direct-boot aware cannot be started for a locked user, so the pass above
+     * reaches few of the apps that want the binder. The ones that start after the unlock are caught
+     * by [BinderSender] as they come up. An app that was already running before it - a launcher is
+     * - is not: the sender remembers having seen its uid, and it will not send again until the uid
+     * has gone. This is the pass for those, once, at the unlock.
+     *
+     * Polled, because a process with no context cannot hear the unlock broadcast, and it is a
+     * question of a second or two whether it is found at once or not; nothing is waiting on it.
+     */
+    private void scheduleBinderSweepAfterUnlock() {
+        // Asked of what the listing saw, not of now: the unlock may have come while the passes above
+        // were running, with the partial list in them.
+        if (!configManager.wasListedWhileLocked()) {
+            return;
+        }
+        ServerLog.mark("user 0 had not unlocked at start-up: the clients get the binder again when it does");
+        final long giveUpAt = SystemClock.uptimeMillis() + UNLOCK_SWEEP_GIVE_UP_MS;
+        mainHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (Boolean.FALSE.equals(UsersCompat.isUserUnlocked(0))) {
+                    if (SystemClock.uptimeMillis() < giveUpAt) {
+                        mainHandler.postDelayed(this, UNLOCK_SWEEP_INTERVAL_MS);
+                    } else {
+                        ServerLog.mark("user 0 has not unlocked; no longer waiting to hand out binders");
+                    }
+                    return;
+                }
+                ServerLog.phase("user 0 unlocked: handing the binder to the clients again");
+                // Not the snapshot: it was taken while locked, which is the reason for this pass.
+                for (int userId : UsersCompat.getUserIdsNoThrow()) {
+                    sendBinderToClient(ShizukuService.this, userId, null);
+                }
+                ServerLog.phase("handed the binder to the clients again");
+            }
+        }, UNLOCK_SWEEP_INTERVAL_MS);
+    }
+
+    private static final long UNLOCK_SWEEP_INTERVAL_MS = 1000;
+
+    /** A phone that is not unlocked within this is not going to be, as far as a boot start is concerned. */
+    private static final long UNLOCK_SWEEP_GIVE_UP_MS = 30 * 60 * 1000;
 
     @Override
     public ShizukuUserServiceManager onCreateUserServiceManager() {
@@ -536,17 +599,28 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     }
 
     void sendBinderToClient() {
-        for (int userId : UsersCompat.getUserIdsNoThrow()) {
-            sendBinderToClient(this, userId);
+        // The packages the config manager already listed, when it did: listing them is the slow part
+        // of this, and it was done a few milliseconds ago for the same flags.
+        Map<Integer, List<PackageInfo>> snapshot = configManager.takeInstalledSnapshot();
+        Collection<Integer> users = snapshot != null && !snapshot.isEmpty()
+                ? snapshot.keySet()
+                : UsersCompat.getUserIdsNoThrow();
+        for (int userId : users) {
+            sendBinderToClient(this, userId, snapshot != null ? snapshot.get(userId) : null);
         }
     }
 
-    private static void sendBinderToClient(Binder binder, int userId) {
+    /**
+     * @param listed the packages of the user, when they are already at hand; null or empty lists
+     *     them again (an empty one is as likely an unreadable list as an empty phone).
+     */
+    private static void sendBinderToClient(Binder binder, int userId, List<PackageInfo> listed) {
         try {
-            Stream<PackageInfo> packages =
-                InstalledPackagesCompat.getInstalledPackagesNoThrow(
-                    PackageManager.GET_PERMISSIONS, userId
-                )
+            List<PackageInfo> all = listed != null && !listed.isEmpty()
+                    ? listed
+                    : InstalledPackagesCompat.getInstalledPackagesNoThrow(
+                            PackageManager.GET_PERMISSIONS, userId);
+            Stream<PackageInfo> packages = all
                 .stream()
                 .filter(pi -> pi != null && pi.requestedPermissions != null)
                 .filter(pi -> ArraysKt.contains(pi.requestedPermissions, PERMISSION));
