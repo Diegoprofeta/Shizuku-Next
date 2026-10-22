@@ -422,6 +422,11 @@ object AdbStarter {
                 return@withContext false
             }
 
+            // Whether `tcpip:` has gone out. Once it has, adbd is restarting to listen on the
+            // new port, so a connection that dies here is the expected outcome and not a reason
+            // to go looking for another port - sending the command a second time would restart
+            // adbd again over a port that was already coming up.
+            var tcpipSent = false
             try {
                 // Which attempt this is, and over what, before adbd is asked to restart: the
                 // answer to "did the port open, and did it cost a running server" starts here.
@@ -434,12 +439,19 @@ object AdbStarter {
                 AdbClient("127.0.0.1", wirelessPort, key).use { client ->
                     client.connectForPairing()
                     // adbd restarts to listen on the new port, so the connection dying here
-                    // is the expected outcome, not a failure.
+                    // is the expected outcome, not a failure. A TLS reset is one of the ways it
+                    // dies on a restart (Conscrypt reports it as an SSLException), so it is
+                    // treated like the socket closing rather than as a failed handshake.
+                    tcpipSent = true
                     runCatching { client.command("tcpip:$port") }
-                        .onFailure { if (it !is EOFException && it !is SocketException) throw it }
+                        .onFailure {
+                            if (it !is EOFException && it !is SocketException && it !is SSLException) {
+                                throw it
+                            }
+                        }
                 }
             } catch (e: AdbPairingRequiredException) {
-                if (retryableOpen(e, searches)) {
+                if (retryableOpen(e, searches, tcpipSent)) {
                     failed += wirelessPort
                     candidate = null
                     continue
@@ -448,7 +460,7 @@ object AdbStarter {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (retryableOpen(e, searches)) {
+                if (retryableOpen(e, searches, tcpipSent)) {
                     failed += wirelessPort
                     candidate = null
                     continue
@@ -469,11 +481,14 @@ object AdbStarter {
      * Logged with the reason when it is, because a port that is passed over silently is the thing
      * that made the stale one impossible to see.
      */
-    private fun retryableOpen(e: Exception, searchesUsed: Int): Boolean {
+    private fun retryableOpen(e: Exception, searchesUsed: Int, commandSent: Boolean): Boolean {
         val kind = classifyConnectFailure(e)
         val decision = decideAfterConnectFailure(
             wireless = true,
-            commandSent = false,
+            // The rule the shared decision already knows: nothing is retried once the command
+            // that restarts adbd is out. This used to say false unconditionally, which let a
+            // TLS reset after `tcpip:` send the command a second time.
+            commandSent = commandSent,
             failure = kind,
             searchesUsed = searchesUsed
         )
