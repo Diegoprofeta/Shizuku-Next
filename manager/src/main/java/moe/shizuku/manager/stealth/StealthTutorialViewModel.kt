@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.utils.ApkUtils.*
+import moe.shizuku.manager.utils.Diag
 import java.io.File
 
 sealed class UiState {
@@ -103,6 +104,9 @@ class StealthTutorialViewModel(
             } catch (e: Exception) {
                 _uiState.postValue(UiState.Error(e))
                 Log.e("StealthTutorialViewModel", "Error creating APK", e)
+                // The dialog can show the sentence; the stack goes to the log this app keeps,
+                // which is how a failure inside the repackaging libraries is ever identified.
+                Diag.error("Stealth", "Could not prepare the repackaged APK", e)
             }
         }
     }

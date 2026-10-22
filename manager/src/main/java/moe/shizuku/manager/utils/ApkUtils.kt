@@ -51,10 +51,14 @@ fun File.changePackageName(
 ): File {
     Log.i(TAG, "Loading APK")
     val module = ApkModule.loadApkFile(this)
+    // A module whose manifest could not be parsed comes back with none, and passing that on ends
+    // in an NPE from somewhere inside the library rather than in a sentence the screen can show.
     val manifest = module.androidManifest
+        ?: throw IllegalStateException("The APK's manifest could not be read")
 
     Log.i(TAG, "Changing package name")
     val oldPkgName = manifest.packageName
+        ?: throw IllegalStateException("The APK's manifest has no package name")
 
     // Renaming the package renames the app but not everything it is called by. Intent filter
     // actions (`<pkg>.START`, `.STOP`, the watchdog actions, the two request actions), the

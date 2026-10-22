@@ -61,6 +61,7 @@ import moe.shizuku.manager.stealth.validatePackageName
 import moe.shizuku.manager.ui.component.SegmentedColumn
 import moe.shizuku.manager.ui.component.SegmentedListItem
 import moe.shizuku.manager.utils.ApkUtils.ORIGINAL_PACKAGE_NAME
+import moe.shizuku.manager.utils.Diag
 import moe.shizuku.manager.utils.ApkUtils.buildApkFilename
 import moe.shizuku.manager.utils.ApkUtils.installPackage
 import moe.shizuku.manager.utils.ApkUtils.uninstallPackage
@@ -111,7 +112,12 @@ fun StealthScreen(onBack: () -> Unit) {
                     val dir = outDir
                     if (dir != null) {
                         runCatching { exportApk(context, dir, s.apk) }
-                            .onFailure { error = it.message }
+                            .onFailure {
+                                // The stack is what says where an unexplained NPE came from; the
+                                // dialog only has room for the sentence.
+                                Diag.error("Stealth", "Could not save the repackaged APK", it)
+                                error = it.message ?: it.javaClass.simpleName
+                            }
                             .onSuccess { pendingUninstall = true }
                     }
                     vm.refresh()
@@ -134,7 +140,7 @@ fun StealthScreen(onBack: () -> Unit) {
             }
 
             is UiState.Error -> {
-                error = s.error.message
+                error = s.error.message ?: s.error.javaClass.simpleName
                 vm.refresh()
             }
 
@@ -385,15 +391,28 @@ fun StealthScreen(onBack: () -> Unit) {
 
 private fun exportApk(context: Context, outDir: Uri, apk: File) {
     val cr = context.contentResolver
-    val docUri = DocumentsContract.buildDocumentUriUsingTree(
-        outDir,
-        DocumentsContract.getTreeDocumentId(outDir)
-    )
-    val doc = DocumentsContract.createDocument(
-        cr, docUri, "application/vnd.android.package-archive", buildApkFilename()
-    ) ?: throw Exception("Could not create file in the selected folder")
 
-    cr.openOutputStream(doc)?.use { output ->
-        apk.inputStream().use { input -> input.copyTo(output) }
+    // The picker offers folders from any provider, and only a tree the platform can name by id
+    // can be written to this way. Asking here turns an opaque failure from inside the framework
+    // into a sentence about the folder.
+    val treeDocumentId = runCatching { DocumentsContract.getTreeDocumentId(outDir) }
+        .getOrElse {
+            throw IllegalStateException(
+                "That folder cannot be written to. Pick one on internal storage.", it
+            )
+        }
+    val docUri = DocumentsContract.buildDocumentUriUsingTree(outDir, treeDocumentId)
+    val doc = try {
+        DocumentsContract.createDocument(
+            cr, docUri, "application/vnd.android.package-archive", buildApkFilename()
+        )
+    } catch (e: Exception) {
+        throw IllegalStateException("The folder refused a new file: ${e.message}", e)
+    } ?: throw IllegalStateException("Could not create a file in the selected folder")
+
+    val output = cr.openOutputStream(doc)
+        ?: throw IllegalStateException("The new file could not be opened for writing")
+    output.use { out ->
+        apk.inputStream().use { input -> input.copyTo(out) }
     }
 }
