@@ -9,6 +9,7 @@ import android.os.IBinder
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -70,7 +71,15 @@ class LockedBootStartService : Service() {
                 Diag.info(AppConstants.TAG, "Start before the unlock: one is already running")
                 return START_NOT_STICKY
             }
-            job = scope.launch { runStart(method) }
+            // ATOMIC, because the cancel that matters can arrive before this coroutine is
+            // dispatched: `cancelRun` cancels a job it can see as active, and a DEFAULT job
+            // cancelled in that window never runs its body at all. The reservation that
+            // `AdbStartRun.reserveAttempt` took is given back in `execute`'s finally, and
+            // `runStart`'s finally is what calls stopSelf, so both would be skipped and the
+            // service, its notification and the in-flight count would stay up for good.
+            // With ATOMIC the body always starts; the first suspension point throws the
+            // cancellation and the existing finally blocks clean up.
+            job = scope.launch(start = CoroutineStart.ATOMIC) { runStart(method) }
         }
         return START_NOT_STICKY
     }
