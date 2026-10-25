@@ -528,11 +528,16 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
                     continue;
                 }
 
-                int deviceId = 0;//Context.DEVICE_ID_DEFAULT
+                // Answered rather than assumed: a grant this could not make leaves the record
+                // saying allowed while the platform never heard about it, which is a permission
+                // that is there until the next restart and gone after it, with nothing said
+                // either way.
                 if (allowed) {
-                    Android17Compat.grantRuntimePermission(packageName, PERMISSION, userId);
-                } else {
-                    Android17Compat.revokeRuntimePermission(packageName, PERMISSION, userId);
+                    if (!Android17Compat.grantRuntimePermission(packageName, PERMISSION, userId)) {
+                        LOGGER.w("could not grant %s to %s", PERMISSION, packageName);
+                    }
+                } else if (!Android17Compat.revokeRuntimePermission(packageName, PERMISSION, userId)) {
+                    LOGGER.w("could not revoke %s from %s", PERMISSION, packageName);
                 }
 
                 // TODO kill user service using

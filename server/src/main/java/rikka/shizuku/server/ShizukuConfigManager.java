@@ -29,6 +29,7 @@ import kotlin.collections.ArraysKt;
 import rikka.hidden.compat.PackageManagerApis;
 import rikka.shizuku.server.util.Android17Compat;
 import rikka.shizuku.server.util.InstalledPackagesCompat;
+import rikka.shizuku.server.util.UserHandleCompat;
 import rikka.shizuku.server.util.UsersCompat;
 import rikka.shizuku.server.ktx.HandlerKt;
 
@@ -248,7 +249,29 @@ public class ShizukuConfigManager extends ConfigManager {
                 List<String> packages = new ArrayList<>();
                 packages.add(pi.packageName);
 
-                updateLocked(uid, packages, ConfigManager.MASK_PERMISSION, allowed ? ConfigManager.FLAG_ALLOWED : 0);
+                if (!allowed) {
+                    // The platform not holding the permission is not the user having taken it
+                    // away. This file is the copy that decides whether a client is allowed, and
+                    // it is what the manager writes when somebody allows an app; overwriting it
+                    // with the platform's answer here is how an app that the user had granted
+                    // came back without permission after every restart, because the platform's
+                    // grant was missing for it while the record still said allowed (issue #145).
+                    // A record that is there - allowed or denied - is a decision somebody made,
+                    // so it is kept. A grant that the platform lost is put back below, and a
+                    // record that has nothing to say about the app stays out of the way.
+                    ShizukuConfig.PackageEntry recorded = find(uid);
+                    if (recorded == null || !recorded.isAllowed()) {
+                        continue;
+                    }
+
+                    if (!Android17Compat.grantRuntimePermission(pi.packageName, PERMISSION,
+                            UserHandleCompat.getUserId(uid))) {
+                        LOGGER.w("could not restore %s for %s", PERMISSION, pi.packageName);
+                    }
+                    continue;
+                }
+
+                updateLocked(uid, packages, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_ALLOWED);
                 changed = true;
             }
         }
