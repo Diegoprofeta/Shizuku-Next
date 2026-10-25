@@ -315,6 +315,38 @@
                 android:value="Watches which app is in the foreground so that the settings a listed app objects to are hidden while it is open, and restored when it leaves. The user turns this on by adding an app to a hiding list, and the ongoing notification it posts is where the settings can be restored." />
         </service>
 
+        <!-- The whole firewall as one tile. It reaches the chain through the same shell every other
+             switch here uses, so it needs the server running; without it the tile says Unavailable
+             rather than pretending either state. -->
+        <service
+            android:name=".service.FirewallTileService"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@drawable/ic_firewall_tile"
+            android:label="@string/firewall_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- The same switch on the home screen. The state arrives by broadcast from the tile (and
+             from its own click), and nothing here polls. -->
+        <receiver
+            android:name=".widget.FirewallWidgetProvider"
+            android:enabled="true"
+            android:exported="false"
+            android:label="@string/firewall_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="moe.shizuku.manager.action.FIREWALL_CHAIN_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/firewall_widget_info" />
+        </receiver>
+
         <receiver
             android:name=".receiver.BinderRequestReceiver"
             android:directBootAware="true"

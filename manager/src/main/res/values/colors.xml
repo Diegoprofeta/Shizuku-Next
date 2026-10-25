@@ -4,4 +4,11 @@
 
     <color name="app_color_light">#3F51B5</color>
     <color name="app_color_dark">#B1B8DF</color>
+
+    <!-- The firewall widget draws its own card, because it is laid over a wallpaper and inside a
+         launcher rather than in this app's theme: fixed colours are the only ones that look the
+         same there as they do here. -->
+    <color name="widget_background">#E61C1B1F</color>
+    <color name="widget_text">#FFFFFFFF</color>
+    <color name="widget_text_dim">#B3FFFFFF</color>
 </resources>

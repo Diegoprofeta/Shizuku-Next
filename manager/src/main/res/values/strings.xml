@@ -1090,6 +1090,15 @@
     <string name="app_network_block">Block network access</string>
     <string name="app_network_block_note">The platform drops its traffic.</string>
 
+    <!-- The whole firewall as one switch: the tile in the shade and the widget on the home
+         screen. The per-app list is unaffected either way, which is what the off state says. -->
+    <string name="firewall_tile_label">Firewall</string>
+    <string name="firewall_widget_label">Firewall</string>
+    <string name="firewall_widget_description">Switch the whole firewall on or off. The apps blocked in Labs stay blocked while it is off.</string>
+    <string name="firewall_state_on">On</string>
+    <string name="firewall_state_off">Off</string>
+    <string name="firewall_state_unavailable">Unavailable</string>
+
     <string name="app_info_version">Version</string>
     <string name="app_info_uid">UID</string>
     <string name="app_info_target_sdk">Target SDK</string>

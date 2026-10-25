@@ -531,26 +531,6 @@ object PackageTools {
     }
 
     /**
-     * Whether the firewall chain is on, by the ROM's command or by the platform behind it.
-     *
-     * Null when neither can say, which is passed on as itself rather than guessed at.
-     */
-    private fun chainEnabled(): Boolean? {
-        val answer = runShellCommand("cmd connectivity get-chain3-enabled")
-        when {
-            answer?.endsWith(":enabled") == true -> return true
-            answer?.endsWith(":disabled") == true -> return false
-        }
-
-        return FirewallApi.chainEnabled()
-    }
-
-    /** Switches the chain on or off, by the ROM's command and otherwise by the platform. */
-    private fun setChainEnabled(enabled: Boolean): Boolean =
-        shellOk("cmd connectivity set-chain3-enabled ${if (enabled) "true" else "false"}") ||
-            FirewallApi.setChainEnabled(enabled)
-
-    /**
      * The uid the platform's firewall knows a package by.
      *
      * Asked of the local package manager rather than the shell: for an installed app it is the same
@@ -570,8 +550,8 @@ object PackageTools {
      * why the row says what it is rather than pretending it is a documented feature.
      */
     fun setNetworkBlocked(context: Context, packageName: String, blocked: Boolean): Boolean {
-        if (chainEnabled() != true) {
-            setChainEnabled(true)
+        if (FirewallChain.isOn() != true) {
+            FirewallChain.setOn(true)
         }
 
         val value = if (blocked) "false" else "true"
