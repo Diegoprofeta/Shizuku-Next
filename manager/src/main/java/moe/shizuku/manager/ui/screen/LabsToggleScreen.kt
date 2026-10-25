@@ -73,6 +73,7 @@ import moe.shizuku.manager.ui.component.televisionTextInput
 import moe.shizuku.manager.ui.component.PillButtonQuiet
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
+import moe.shizuku.manager.manage.AutoStartGate
 import moe.shizuku.manager.manage.BlockedGates
 import moe.shizuku.manager.manage.Hiding
 import moe.shizuku.manager.manage.HidingGrants
@@ -447,9 +448,14 @@ fun LabsToggleScreen(
                 val signal = feature.signal
                 if (signal != null) {
                     Hiding.setSignalEnabled(signal, checked)
+                } else if (feature == AppToggleFeature.AUTOSTART) {
+                    // The one gate that also exists outside this screen, on a tile and a widget: the
+                    // same code answers both, so a list disarmed from one place is disarmed in all
+                    // of them and a refusal reads the same wherever it was asked for.
+                    refused = !AutoStartGate.setOn(context, checked)
                 } else {
-                    // The two lists that are about an app op have no rule of their own - what they
-                    // act on is what the platform reports - so the gate keeps the list itself: off
+                    // The firewall's list is about an app op and has no rule of its own - what it
+                    // acts on is what the platform reports - so the gate keeps the list itself: off
                     // writes it down and puts every app on it back, on puts those apps back again.
                     // A round trip therefore returns exactly what was there, which is what makes
                     // offering it safe.

@@ -1,9 +1,7 @@
 package moe.shizuku.manager.manage
 
-import android.content.Context
-import android.content.Intent
-import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.utils.runShellCommand
+import rikka.shizuku.Shizuku
 
 /**
  * The whole firewall as one switch: chain 3, which every per-app block this app sets lands in.
@@ -25,9 +23,6 @@ import moe.shizuku.manager.utils.runShellCommand
  */
 object FirewallChain {
 
-    /** Sent when the chain changed, so a widget shows what the tile just did. */
-    const val ACTION_CHANGED = "moe.shizuku.manager.action.FIREWALL_CHAIN_CHANGED"
-
     /**
      * What `cmd connectivity get-chain3-enabled` answered, or null when it said neither thing.
      *
@@ -47,7 +42,10 @@ object FirewallChain {
      * could say.
      */
     fun isOn(): Boolean? {
-        if (!ShizukuStateMachine.isRunning()) return null
+        // The binder, not the state machine: a tile or a widget runs in a process of its own, and
+        // one that has just started has not been told anything yet. The binder is the truth about
+        // whether a command can be run right now, and the state machine catches up to it.
+        if (!Shizuku.pingBinder()) return null
 
         parse(runShellCommand("cmd connectivity get-chain3-enabled"))?.let { return it }
 
@@ -65,7 +63,7 @@ object FirewallChain {
      * for, since a ROM with the verb can still be one where the verb does nothing.
      */
     fun setOn(on: Boolean): Boolean {
-        if (!ShizukuStateMachine.isRunning()) return false
+        if (!Shizuku.pingBinder()) return false
 
         runShellCommand("cmd connectivity set-chain3-enabled ${if (on) "true" else "false"}")
         if (isOn() == on) return true
@@ -78,10 +76,5 @@ object FirewallChain {
     fun toggle(): Boolean? {
         val current = isOn() ?: return null
         return if (setOn(!current)) !current else null
-    }
-
-    /** Tells the widget the chain changed, since nothing else is listening for it. */
-    fun notifyChanged(context: Context) {
-        context.sendBroadcast(Intent(ACTION_CHANGED).setPackage(context.packageName))
     }
 }

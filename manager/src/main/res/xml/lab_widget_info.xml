@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One row: one switch, no list, no settings. Every switch widget points at this file - the name in
+  the picker is the receiver's label, which is what makes them tell apart - and none of them is
+  updated on a timer: the state is read when the widget is drawn and when it is clicked, which is
+  every time the answer can have changed in a way this app would have been told about.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/lab_widget_description"
+    android:initialLayout="@layout/widget_lab_switch"
+    android:minWidth="140dp"
+    android:minHeight="46dp"
+    android:previewLayout="@layout/widget_lab_switch"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />
