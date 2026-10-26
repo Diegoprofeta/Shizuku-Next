@@ -30,6 +30,7 @@ import moe.shizuku.manager.utils.SettingsPage
 import moe.shizuku.manager.utils.ShizukuStateMachine
 import moe.shizuku.manager.utils.UserHandleCompat
 import moe.shizuku.manager.utils.createChannelCompat
+import moe.shizuku.manager.ktx.ensureWorkManager
 import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.service.LockedBootStartService
 import moe.shizuku.manager.start.AdbStartRun
@@ -314,7 +315,10 @@ object ShizukuReceiverStarter {
             return
         }
 
-        AdbStartWorker.enqueue(context, startMethod = startMethod, immediate = immediate)
+        if (!AdbStartWorker.enqueue(context, startMethod = startMethod, immediate = immediate)) {
+            StartStatusReporter.failed(context.getString(R.string.start_failed))
+            return
+        }
         // "Waiting for Wi-Fi" only when there is a wait: a start that goes ahead without one
         // would say it was waiting for a network it does not use, which is the line the user
         // reads after a tap that already worked.
@@ -347,8 +351,10 @@ object ShizukuReceiverStarter {
         // Nothing can be queued before the unlock, and asking WorkManager for its instance then is
         // an exception (a process that woke without credential storage has none). The notification
         // is still ours to take down.
-        if (context.isUserUnlockedCompat()) {
-            WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+        if (context.isUserUnlockedCompat() && context.ensureWorkManager()) {
+            runCatching {
+                WorkManager.getInstance(context).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+            }.onFailure { Diag.warn(AppConstants.TAG, "Could not drop the queued start", it) }
         }
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(NOTIFICATION_ID)

@@ -6,9 +6,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
-import androidx.work.Configuration
-import androidx.work.WorkManager
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.ktx.ensureWorkManager
 import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.service.LockedBootStartService
 import moe.shizuku.manager.service.WatchdogService
@@ -81,7 +80,7 @@ object UserUnlockedStarter {
 
         // Anything that may start a server reaches WorkManager, which the system could not set up
         // while the process was running without credential storage.
-        ensureWorkManager(context)
+        context.ensureWorkManager()
 
         val startOnBoot = ShizukuSettings.getStartOnBoot(context)
         when (decideStartNow(true, startOnBoot, ShizukuSettings.getManuallyStopped())) {
@@ -150,19 +149,4 @@ object UserUnlockedStarter {
 
     private const val WATCH_INTERVAL_MS = 500L
 
-    /**
-     * A process that started before the unlock may have no WorkManager: its initializer is a
-     * content provider, and one that is not direct-boot aware is not installed in such a process,
-     * nor installed later when the unlock comes. Asking the process for it then fails for good
-     * rather than for now, so it is set up here, where the unlock is known.
-     */
-    private fun ensureWorkManager(context: Context) {
-        try {
-            WorkManager.getInstance(context)
-        } catch (e: IllegalStateException) {
-            Diag.warn(TAG, "WorkManager was not set up before the unlock; setting it up now", e)
-            runCatching { WorkManager.initialize(context, Configuration.Builder().build()) }
-                .onFailure { Diag.error(TAG, "Could not set WorkManager up", it) }
-        }
-    }
 }

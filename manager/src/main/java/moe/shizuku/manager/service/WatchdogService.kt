@@ -30,6 +30,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.MainActivity
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbStarter
+import moe.shizuku.manager.ktx.ensureWorkManager
 import moe.shizuku.manager.ktx.isUserUnlockedCompat
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.receiver.StartNowDecision
@@ -58,7 +59,7 @@ class WatchdogService : Service() {
     private var awaitingRecovery = false
 
     /** Only one restart at a time, and not one every few seconds for the same outage. */
-    private val restartInFlight = AtomicBoolean(false)
+    private val restartClaim = RestartClaim(STALE_RESTART_MS)
 
     @Volatile
     private var lastRestartAt = 0L
@@ -293,15 +294,38 @@ class WatchdogService : Service() {
             Diag.debug(TAG, "Restart attempt skipped: one was made moments ago")
             return
         }
-        if (!restartInFlight.compareAndSet(false, true)) {
-            Diag.debug(TAG, "Restart attempt skipped: one is already in flight")
-            return
+        when (restartClaim.take(now)) {
+            RestartClaim.Outcome.BUSY -> {
+                Diag.debug(TAG, "Restart attempt skipped: one is already in flight")
+                return
+            }
+
+            // A restart that never released the claim is not a restart in flight: everything that
+            // takes it gives it back when it ends, and one still held long after the longest
+            // attempt could have taken is a claim nobody released. That is how the server stayed
+            // down from the evening until the app was force stopped the next morning.
+            RestartClaim.Outcome.TAKEN_OVER_STALE ->
+                Diag.warn(TAG, "A restart has been marked in flight for too long; starting another")
+
+            RestartClaim.Outcome.TAKEN -> Unit
         }
         lastRestartAt = now
         recordAttempt(now)
 
-        // Cancel any prior WorkManager attempt so we don't inherit exponential backoff
-        WorkManager.getInstance(applicationContext).cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+        // Cancel any prior WorkManager attempt so we don't inherit exponential backoff.
+        //
+        // Nothing from here to the launch may throw: the claim above is released by the launch's
+        // own finally, so anything that failed in between left it held forever. Asking for
+        // WorkManager in a process that started before the first unlock is exactly such a
+        // failure, and it was the one that did it.
+        if (applicationContext.ensureWorkManager()) {
+            runCatching {
+                WorkManager.getInstance(applicationContext)
+                    .cancelUniqueWork(AdbStartWorker.UNIQUE_WORK_NAME)
+            }.onFailure { Diag.warn(TAG, "Could not cancel the queued start", it) }
+        } else {
+            Diag.warn(TAG, "No WorkManager to cancel a queued start with; restarting anyway")
+        }
 
         serviceScope.launch {
             try {
@@ -340,7 +364,7 @@ class WatchdogService : Service() {
                     )
                 }
             } finally {
-                restartInFlight.set(false)
+                restartClaim.release()
             }
 
             // A start reports success as soon as the binder appears, and the interesting case
@@ -672,6 +696,15 @@ class WatchdogService : Service() {
 
         /** Two restarts within this are the same outage, not two. */
         private const val RESTART_COOLDOWN_MS = 15_000L
+
+        /**
+         * How long a restart may be marked in flight before it is taken to have been abandoned.
+         *
+         * Longer than the longest a restart can legitimately take: the start it waits on is given
+         * about two and a half minutes, then the recovery check and the server's own boot grace
+         * on top. Anything past this is not a start, it is a claim nobody released.
+         */
+        private const val STALE_RESTART_MS = 10 * 60_000L
 
         /**
          * How often a server that is down and not coming back is tried again.

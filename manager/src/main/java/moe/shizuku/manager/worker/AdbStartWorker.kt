@@ -9,8 +9,10 @@ import java.util.concurrent.TimeUnit
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter.WorkerState
+import moe.shizuku.manager.ktx.ensureWorkManager
 import moe.shizuku.manager.start.AdbStartRun
 import moe.shizuku.manager.start.StartTransport
+import moe.shizuku.manager.utils.Diag
 import moe.shizuku.manager.utils.EnvironmentUtils
 
 /**
@@ -88,11 +90,18 @@ class AdbStartWorker(context: Context, params: WorkerParameters) :
          */
         const val UNIQUE_WORK_NAME = "adb_start_worker"
 
+        /**
+         * Queues one start, and says whether it was queued.
+         *
+         * False when this process has no WorkManager to queue it in, which is the case for a
+         * process that started before the first unlock and never had one set up. The caller has
+         * to say the start failed rather than let it look as if it is under way.
+         */
         fun enqueue(
             context: Context,
             startMethod: Int = ShizukuSettings.StartMethod.WIRELESS,
             immediate: Boolean = false
-        ) {
+        ): Boolean {
             val usbMethod = startMethod == ShizukuSettings.StartMethod.USB
             val cb = Constraints.Builder()
             // Waiting for a network is only worth it when the start has no other way to
@@ -121,11 +130,24 @@ class AdbStartWorker(context: Context, params: WorkerParameters) :
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .build()
 
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                request
-            )
+            // A process that started before the first unlock has no WorkManager, and asking it
+            // for one throws. A start that cannot be queued has failed, and says so here rather
+            // than letting the exception out of a call the caller cannot catch it from.
+            if (!context.ensureWorkManager()) {
+                Diag.warn("AdbStartWorker", "No WorkManager to queue a start with")
+                return false
+            }
+            return runCatching {
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    UNIQUE_WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    request
+                )
+                true
+            }.getOrElse {
+                Diag.error("AdbStartWorker", "Could not queue the start", it)
+                false
+            }
         }
         const val CHANNEL_ID = AdbStartRun.CHANNEL_ID
         const val NOTIFICATION_ID = AdbStartRun.NOTIFICATION_ID
