@@ -53,7 +53,10 @@ abstract class LabTileService(private val switch: LabSwitch) : TileService() {
 
             switch.apply(this@LabTileService, !current)
             LabSwitch.notifyChanged(this@LabTileService, switch)
-            show(readState())
+
+            val state = readState()
+            show(state)
+            switch.announce(this@LabTileService, state)
         }
     }
 

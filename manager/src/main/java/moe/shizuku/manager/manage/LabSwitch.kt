@@ -1,6 +1,9 @@
 package moe.shizuku.manager.manage
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessibilityNew
@@ -160,6 +163,30 @@ enum class LabSwitch(@StringRes val label: Int, val image: ImageVector) {
     fun toggle(context: Context): Boolean? {
         val current = isOn() ?: return null
         return apply(context, !current)
+    }
+
+    /**
+     * Says what the switch became, after a tap outside the app.
+     *
+     * A tile and a widget both answer on the control itself, which is fine when the control is in
+     * front of you and useless the moment the shade closes or the card is under a thumb. The toast
+     * is the same sentence for both: "Firewall is on". Null means the feature could not be moved
+     * at all - most often because the server is not running - and says that instead of naming a
+     * state that did not happen.
+     */
+    fun announce(context: Context, on: Boolean?) {
+        val text = context.getString(
+            when (on) {
+                true -> R.string.lab_switch_is_on
+                false -> R.string.lab_switch_is_off
+                null -> R.string.lab_switch_could_not_change
+            },
+            context.getString(label)
+        )
+
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**

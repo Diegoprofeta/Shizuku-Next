@@ -1106,6 +1106,12 @@
     <string name="lab_switch_watchdog">Watchdog</string>
     <string name="lab_widget_description">Switch this feature on or off.</string>
 
+    <!-- Said after a switch outside the app is tapped, since a tile or a widget gives no other
+         answer: the state is on the control, but the control is not where the finger is. -->
+    <string name="lab_switch_is_on">%1$s is on</string>
+    <string name="lab_switch_is_off">%1$s is off</string>
+    <string name="lab_switch_could_not_change">%1$s could not be changed</string>
+
     <string name="app_info_version">Version</string>
     <string name="app_info_uid">UID</string>
     <string name="app_info_target_sdk">Target SDK</string>

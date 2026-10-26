@@ -75,7 +75,10 @@ abstract class LabWidgetProvider(private val switch: LabSwitch) : AppWidgetProvi
                 val current = readState()
                 if (current != null) {
                     switch.apply(context, !current)
-                    drawNow(context, widgetIds(context), readState())
+
+                    val state = readState()
+                    drawNow(context, widgetIds(context), state)
+                    switch.announce(context, state)
                 }
             } finally {
                 pending.finish()
