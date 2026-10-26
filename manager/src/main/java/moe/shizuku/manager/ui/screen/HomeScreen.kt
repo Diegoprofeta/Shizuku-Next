@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -95,6 +96,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.home.showAccessibilityDialog
 import moe.shizuku.manager.manage.Hiding
+import moe.shizuku.manager.manage.LabSwitch
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.start.StartFailureKind
 import moe.shizuku.manager.start.StartStatus
@@ -151,6 +153,13 @@ fun HomeScreen(bottomPadding: Dp) {
     var rooted by remember { mutableStateOf(false) }
     var startMethod by remember { mutableStateOf(ShizukuSettings.getStartMethod()) }
     var developerOptionsOn by remember { mutableStateOf(context.isDeveloperOptionsEnabled()) }
+    // The three platform switches, as they are set now. Read raw rather than through
+    // isDeveloperOptionsEnabled(): that answers whether ADB needs developer options at all, and on
+    // 17 it answers yes whatever the setting says. Read again on resume and after every tap, so
+    // the buttons show the platform's answer rather than the last thing this screen asked for.
+    var devOptions by remember { mutableStateOf(readGlobalSwitch(context, "development_settings_enabled")) }
+    var usbDebugging by remember { mutableStateOf(readGlobalSwitch(context, "adb_enabled")) }
+    var wirelessDebugging by remember { mutableStateOf(readGlobalSwitch(context, "adb_wifi_enabled")) }
     var hidingActive by remember { mutableStateOf(false) }
     // Saved, so the section somebody opened is still open after a rotation.
     var otherMethodsOpen by rememberSaveable { mutableStateOf(false) }
@@ -159,6 +168,27 @@ fun HomeScreen(bottomPadding: Dp) {
     var diagnostics by remember { mutableStateOf("") }
     val startStatus by StartStatusReporter.status.collectAsState()
     val scope = rememberCoroutineScope()
+
+    /**
+     * Flips one of the three platform switches, then reads it back.
+     *
+     * The same call the tiles use, so this row and a tile cannot disagree, and the state shown is
+     * the one the platform ended up with: a setting adb refuses leaves the button where it was and
+     * the toast says so, instead of a button that moved and a setting that did not.
+     */
+    fun toggleSwitch(switch: LabSwitch, show: (Boolean) -> Unit) {
+        scope.launch {
+            val now = withContext(Dispatchers.IO) {
+                val current = switch.isOn()
+                if (current == null) null else {
+                    switch.apply(context, !current)
+                    switch.isOn()
+                }
+            }
+            show(now ?: false)
+            switch.announce(context, now)
+        }
+    }
 
     // Android 16+ gates local-network discovery behind a runtime permission, and discovery is
     // the first thing a wireless start does. Asking here on the path that needs it, when the
@@ -292,6 +322,11 @@ fun HomeScreen(bottomPadding: Dp) {
         // Asked again every time the screen comes back: what clears this is the platform reading
         // the declaration, or a reboot, and a warning that outlives its cause is one nobody reads.
         permissionOwner = readPermissionOwnership(context)
+
+        // The three switches can be changed from Settings while this screen was away.
+        devOptions = readGlobalSwitch(context, "development_settings_enabled")
+        usbDebugging = readGlobalSwitch(context, "adb_enabled")
+        wirelessDebugging = readGlobalSwitch(context, "adb_wifi_enabled")
     }
 
     LaunchedEffect(Unit) {
@@ -636,6 +671,22 @@ fun HomeScreen(bottomPadding: Dp) {
                                 reason = "home-restart"
                             )
                         }
+                    }
+                )
+            }
+            item {
+                // The three debugging switches, under the server's own, because they are what
+                // starting needs and what a person turns off when they are done. Blue is on and
+                // the quiet surface is off, the same blue the Restart button uses for "this does
+                // something": no new colour role, and no icon to read.
+                DebuggingActionButtons(
+                    devOptions = devOptions,
+                    usbDebugging = usbDebugging,
+                    wirelessDebugging = wirelessDebugging,
+                    onDevOptions = { toggleSwitch(LabSwitch.DEVELOPER_OPTIONS) { devOptions = it } },
+                    onUsbDebugging = { toggleSwitch(LabSwitch.USB_DEBUGGING) { usbDebugging = it } },
+                    onWirelessDebugging = {
+                        toggleSwitch(LabSwitch.WIRELESS_DEBUGGING) { wirelessDebugging = it }
                     }
                 )
             }
@@ -1147,6 +1198,55 @@ private fun StatusFact(fact: StatusFactEntry, modifier: Modifier = Modifier) {
 }
 
 /** Restart's blue see the note where it is used. */
+/** A platform setting read as on or off; anything unreadable counts as off. */
+private fun readGlobalSwitch(context: Context, key: String): Boolean = runCatching {
+    android.provider.Settings.Global.getInt(context.contentResolver, key, 0) != 0
+}.getOrDefault(false)
+
+/**
+ * The three debugging switches, as three buttons under the server's own.
+ *
+ * Named short because they share one row: the full names ("Developer options", "USB debugging",
+ * "Wireless debugging") do not fit three across, and the tile picker already spells them out.
+ */
+@Composable
+private fun DebuggingActionButtons(
+    devOptions: Boolean,
+    usbDebugging: Boolean,
+    wirelessDebugging: Boolean,
+    onDevOptions: () -> Unit,
+    onUsbDebugging: () -> Unit,
+    onWirelessDebugging: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        DebuggingButton(stringResource(R.string.home_switch_dev_options), devOptions, onDevOptions)
+        DebuggingButton(stringResource(R.string.home_switch_usb), usbDebugging, onUsbDebugging)
+        DebuggingButton(
+            stringResource(R.string.home_switch_wireless),
+            wirelessDebugging,
+            onWirelessDebugging
+        )
+    }
+}
+
+@Composable
+private fun RowScope.DebuggingButton(label: String, on: Boolean, onClick: () -> Unit) {
+    Button(
+        modifier = Modifier.weight(1f),
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (on) RestartBlue else MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    ) {
+        Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
 private val RestartBlue = Color(0xFF2563EB)
 
 /**

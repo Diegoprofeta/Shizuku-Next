@@ -1113,6 +1113,12 @@
     <string name="lab_switch_hide_developer_options">Hide developer options</string>
     <string name="lab_switch_hide_usb_debugging">Hide USB debugging</string>
     <string name="lab_switch_hide_wireless_debugging">Hide wireless debugging</string>
+
+    <!-- The three debugging switches on the home screen, under the server's buttons. Short
+         because three share one row; the tile picker spells them out in full. -->
+    <string name="home_switch_dev_options">Dev options</string>
+    <string name="home_switch_usb">USB debug</string>
+    <string name="home_switch_wireless">Wi-Fi debug</string>
     <string name="lab_widget_description">Switch this feature on or off.</string>
 
     <!-- Said after a switch outside the app is tapped, since a tile or a widget gives no other
