@@ -104,7 +104,7 @@ import moe.shizuku.manager.ui.component.stripHtmlTags
 import moe.shizuku.manager.adb.AdbStarter
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.start.StartMethodGuard
-import moe.shizuku.manager.start.hasWriteSecureSettings
+import moe.shizuku.manager.start.canWriteSecureSettings
 import moe.shizuku.manager.start.AdbPortPersistence
 import moe.shizuku.manager.start.applyAdbWithoutDeveloperOptions
 import moe.shizuku.manager.start.restoreDeveloperOptions
@@ -232,7 +232,10 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
     // is offered at all. It arrives without this screen being told - a running Shizuku grants
     // itself the permission, and `pm grant` from a computer does the same - so it is read
     // again every time the screen is come back to rather than once when it is built.
-    var writeSecureSettings by remember { mutableStateOf(context.hasWriteSecureSettings()) }
+    // True when a secure setting can be written either way: the app's own grant, or the running
+    // server, which is shell and may write them itself. A phone whose shell cannot grant
+    // permissions has no other route, and the rows below used to stay disabled there forever.
+    var writeSecureSettings by remember { mutableStateOf(context.canWriteSecureSettings()) }
 
     // The language can be changed without this screen: from Android 13 the system's own per-app
     // language screen sets it too, and the framework rebuilds the activities rather than the
@@ -240,7 +243,7 @@ fun SettingsScreen(bottomPadding: Dp, onOpenDetail: (Detail) -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         AppLocale.reconcile(context)
         language = ShizukuSettings.getLanguageTag()
-        writeSecureSettings = context.hasWriteSecureSettings()
+        writeSecureSettings = context.canWriteSecureSettings()
     }
 
     // Root can be gone since the method was chosen (an OTA, root switched off in the

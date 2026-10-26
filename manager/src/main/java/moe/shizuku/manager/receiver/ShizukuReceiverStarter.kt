@@ -20,7 +20,7 @@ import moe.shizuku.manager.service.WatchdogGuard
 import moe.shizuku.manager.start.StartStatusReporter
 import moe.shizuku.manager.start.StartMethodGuard
 import moe.shizuku.manager.start.StartTransport
-import moe.shizuku.manager.start.hasWriteSecureSettings
+import moe.shizuku.manager.start.canWriteSecureSettings
 import moe.shizuku.manager.start.needsWriteSecureSettingsFor
 import moe.shizuku.manager.start.startMethodLabelRes
 import moe.shizuku.manager.starter.Starter
@@ -251,8 +251,9 @@ object ShizukuReceiverStarter {
         // start whose debugging toggle is already on. On a fresh install where the grant
         // from the previous install is gone that demanded a computer before Shizuku could
         // start at all. Now only the start that actually has to switch wireless debugging on
-        // is held up, and only because it cannot be done without the permission.
-        if (context.needsWriteSecureSettingsFor(startMethod) && !context.hasWriteSecureSettings()) {
+        // is held up, and only when there is no way to write that setting at all: the app's own
+        // grant, or a running server, which writes it as shell.
+        if (context.needsWriteSecureSettingsFor(startMethod) && !context.canWriteSecureSettings()) {
             StartStatusReporter.failed(
                 context.getString(
                     R.string.start_failed_write_secure_settings,

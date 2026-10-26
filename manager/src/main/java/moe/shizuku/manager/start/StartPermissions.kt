@@ -13,8 +13,10 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.ShizukuApplication
 import moe.shizuku.manager.ShizukuSettings
@@ -87,6 +89,23 @@ fun Context.openAppSettings() {
 fun Context.hasWriteSecureSettings(): Boolean =
     checkSelfPermission(WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
 
+/**
+ * Whether a secure setting can be written at all, by either route.
+ *
+ * Directly with WRITE_SECURE_SETTINGS, which a running server hands the app and which keeps
+ * working with the server stopped after that; or through a running server, which is shell and may
+ * write these settings itself.
+ *
+ * The second route is the one that matters on a phone whose shell cannot hand permissions out:
+ * `pm grant` answers "neither user 2000 nor current process has GRANT_RUNTIME_PERMISSIONS", so the
+ * grant can never arrive, and the experiment that needed it stayed greyed out on a running server
+ * with a message telling the user to run a command that cannot work there (issue #151). Nothing
+ * about writing `adb_wifi_enabled` needs the app to hold the permission when the server can write
+ * it instead.
+ */
+fun Context.canWriteSecureSettings(): Boolean =
+    hasWriteSecureSettings() || Shizuku.pingBinder()
+
 fun Context.isWirelessDebuggingEnabled(): Boolean =
     Settings.Global.getInt(contentResolver, ADB_WIFI_ENABLED, 0) == 1
 
@@ -120,21 +139,46 @@ fun Context.needsWriteSecureSettingsFor(@ShizukuSettings.StartMethod startMethod
  * SecurityException was then reported as "network not authorized, re-pair the device",
  * which is nowhere near what happened. A denied nudge should fail the nudge, nothing more.
  */
-fun Context.writeGlobalSetting(key: String, value: Int): Boolean = runCatching {
-    Settings.Global.putInt(contentResolver, key, value)
-    true
-}.getOrElse {
-    Diag.warn(AppConstants.TAG, "Could not write the $key setting (WRITE_SECURE_SETTINGS missing?)")
-    false
+fun Context.writeGlobalSetting(key: String, value: Int): Boolean =
+    writeGlobal(key, value.toString()) { Settings.Global.putInt(contentResolver, key, value) }
+
+fun Context.writeGlobalLongSetting(key: String, value: Long): Boolean =
+    writeGlobal(key, value.toString()) { Settings.Global.putLong(contentResolver, key, value) }
+
+/**
+ * Writes global setting [key] as [value], directly where the app may and through the server where
+ * it may not, answering whether it is now what was asked for.
+ *
+ * The read back is what decides, not the absence of an exception: a provider that refuses the
+ * write and one that silently keeps the old value look the same from here.
+ *
+ * The shell write is skipped on the main thread: it blocks on the server answering, and a server
+ * that has stopped answering should be a failed write rather than an ANR.
+ */
+private fun Context.writeGlobal(key: String, value: String, direct: () -> Unit): Boolean {
+    runCatching { direct() }
+    if (readGlobalSetting(key) == value) return true
+
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        Diag.warn(
+            AppConstants.TAG,
+            "Could not write the $key setting, and the shell fallback cannot run on the main thread"
+        )
+        return false
+    }
+
+    // The same fallback the Labs switches use: the server is shell, and shell writes these.
+    runCatching { runShellCommand("settings put global $key $value") }
+    val written = readGlobalSetting(key) == value
+    if (!written) {
+        Diag.warn(AppConstants.TAG, "Could not write the $key setting (WRITE_SECURE_SETTINGS missing?)")
+    }
+    return written
 }
 
-fun Context.writeGlobalLongSetting(key: String, value: Long): Boolean = runCatching {
-    Settings.Global.putLong(contentResolver, key, value)
-    true
-}.getOrElse {
-    Diag.warn(AppConstants.TAG, "Could not write the $key setting (WRITE_SECURE_SETTINGS missing?)")
-    false
-}
+private fun Context.readGlobalSetting(key: String): String? = runCatching {
+    Settings.Global.getString(contentResolver, key)
+}.getOrNull()
 
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
