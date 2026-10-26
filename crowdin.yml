@@ -122,3 +122,16 @@ files:
 
     translate_attributes: 0
     content_segmentation: 0
+
+    # What happens to a string's translations when its English text changes. Left out, Crowdin
+    # deletes them: a typo fix, a corrected word or a stray line break in the source would empty
+    # that key in every language and hand the translators a two-word string to do again. The
+    # Russian translation was already lost once to a sync that followed a change nobody thought
+    # about; this is the setting that stops the same thing happening one string at a time.
+    #
+    # update_without_changes rather than update_as_unapproved: an unapproved translation is left
+    # out of the export when the project is set to export approved strings only, which would show
+    # English in the app for that key - the exact failure this is here to prevent. The cost is
+    # that a real change of meaning keeps its old approval, so a wording change still has to be
+    # asked for in the pull request that makes it.
+    update_option: update_without_changes
