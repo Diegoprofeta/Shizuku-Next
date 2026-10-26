@@ -233,14 +233,18 @@ class WatchdogService : Service() {
         // the unlock hook starts the watchdog again, and its probe comes back here.
         //
         // Root is the exception: it needs neither, so a phone that rebooted and sat locked all
-        // night can be recovered without waiting for somebody to pick it up. The wireless start
-        // still waits, because before the unlock it is made in a foreground service this loop
-        // does not drive.
+        // night can be recovered without waiting for somebody to pick it up, and a USB start with
+        // the classic port already open is the same kind of start as the wireless one. The
+        // wireless method itself still waits, because before the unlock it is made in a
+        // foreground service this loop does not drive.
+        val lockedMethod = ShizukuSettings.getStartMethod()
         when (decideStartNow(
             applicationContext.isUserUnlockedCompat(),
             ShizukuSettings.isWatchdogStartAllowed(),
             ShizukuSettings.getManuallyStopped(),
-            canStartLocked = ShizukuSettings.getStartMethod() == ShizukuSettings.StartMethod.ROOT
+            canStartLocked = lockedMethod == ShizukuSettings.StartMethod.ROOT ||
+                (lockedMethod == ShizukuSettings.StartMethod.USB &&
+                    EnvironmentUtils.getAdbTcpPort() > 0)
         )) {
             StartNowDecision.START, StartNowDecision.START_LOCKED -> Unit
             StartNowDecision.SKIP_STOPPED -> {

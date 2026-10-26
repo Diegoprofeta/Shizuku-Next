@@ -88,9 +88,24 @@ class StartNowDecisionTest {
         // Root was the one that waited for no reason: libsu needs no credential storage, so a
         // phone that rebooted and stayed locked kept a root server down until it was unlocked.
         assertTrue(canStartBeforeUnlock(ShizukuSettings.StartMethod.ROOT))
-        // USB needs somebody at the prompt, and the system method opens an activity a locked
-        // phone cannot show.
-        assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.USB))
+        // The system method opens an activity a locked phone cannot show.
         assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.SYSTEM))
+    }
+
+    @Test
+    fun `a USB start can run before the unlock only when its port is already there`() {
+        assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.USB))
+        assertFalse(
+            canStartBeforeUnlock(ShizukuSettings.StartMethod.USB, classicPortOpen = false)
+        )
+        assertTrue(
+            canStartBeforeUnlock(ShizukuSettings.StartMethod.USB, classicPortOpen = true)
+        )
+    }
+
+    @Test
+    fun `an open port changes nothing for the methods that never need one`() {
+        assertTrue(canStartBeforeUnlock(ShizukuSettings.StartMethod.ROOT, classicPortOpen = false))
+        assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.SYSTEM, classicPortOpen = true))
     }
 }

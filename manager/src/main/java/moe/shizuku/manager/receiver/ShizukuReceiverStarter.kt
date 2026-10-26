@@ -114,7 +114,12 @@ object ShizukuReceiverStarter {
             userInitiated,
             startInFlight = inFlightAgeMs != null,
             userUnlocked = userUnlocked,
-            canStartLocked = canStartBeforeUnlock(startMethod)
+            // A USB start has the classic port to reach or it has nothing: the port that is
+            // already there is what makes it a locked start rather than one waiting for a cable.
+            canStartLocked = canStartBeforeUnlock(
+                startMethod,
+                classicPortOpen = EnvironmentUtils.getAdbTcpPort() > 0
+            )
         )
         when (decision) {
             StartDecision.IGNORE_RUNNING -> {

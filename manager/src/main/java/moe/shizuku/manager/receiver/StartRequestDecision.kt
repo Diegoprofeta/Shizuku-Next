@@ -6,8 +6,8 @@ enum class StartDecision {
     START,
 
     /**
-     * Go ahead and start, before the unlock: never through WorkManager. A wireless start runs in
-     * the foreground service, a root start runs directly.
+     * Go ahead and start, before the unlock: never through WorkManager. The wireless and USB
+     * starts run in the foreground service, a root start runs directly.
      */
     START_LOCKED,
 
@@ -31,8 +31,8 @@ enum class StartDecision {
  * so the two ran side by side and the second one's starter killed the first one's server.
  *
  * Before the first unlock nothing here may reach WorkManager, whose database is in storage that is
- * not readable yet. A start that can be made without it ([canStartLocked]) is made in the
- * foreground service ([StartDecision.START_LOCKED]); one that cannot waits for the unlock.
+ * not readable yet. A start that can be made without it ([canStartLocked]) is made directly or in
+ * the foreground service ([StartDecision.START_LOCKED]); one that cannot waits for the unlock.
  * [userUnlocked] and [canStartLocked] default to the answers that leave every earlier decision as
  * it was.
  */

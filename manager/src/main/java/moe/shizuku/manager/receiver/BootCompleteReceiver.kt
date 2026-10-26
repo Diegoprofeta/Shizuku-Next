@@ -9,6 +9,7 @@ import moe.shizuku.manager.service.WatchdogService
 import moe.shizuku.manager.start.reapplyAdbWithoutDeveloperOptionsIfEnabled
 import moe.shizuku.manager.utils.BootTimeline
 import moe.shizuku.manager.utils.Diag
+import moe.shizuku.manager.utils.EnvironmentUtils
 
 class BootCompleteReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -44,7 +45,11 @@ class BootCompleteReceiver : BroadcastReceiver() {
             userUnlocked = context.isUserUnlockedCompat(),
             startWanted = startOnBoot,
             manuallyStopped = ShizukuSettings.getManuallyStopped(),
-            canStartLocked = canStartBeforeUnlock(ShizukuSettings.getStartMethod())
+            canStartLocked = canStartBeforeUnlock(
+                ShizukuSettings.getStartMethod(),
+                // A classic port left open across the reboot is all a USB start needs.
+                classicPortOpen = EnvironmentUtils.getAdbTcpPort() > 0
+            )
         )) {
             StartNowDecision.START_LOCKED ->
                 ShizukuReceiverStarter.start(context, reason = "locked-boot")

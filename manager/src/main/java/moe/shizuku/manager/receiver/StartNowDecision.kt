@@ -51,19 +51,22 @@ internal fun decideStartNow(
 /**
  * Whether [method] can be started before the first unlock.
  *
- * The two wireless ones and root. Wireless needs only the saved settings and key
+ * The two wireless ones and root, always. Wireless needs only the saved settings and key
  * (device-protected storage), the system settings and the network, all of which are there while
- * the phone is locked.
+ * the phone is locked. Root is the same kind of start: libsu hands it a shell without touching
+ * credential storage, and the starter reads its config from the device-protected copy. Root used
+ * to wait for the unlock with the rest, which is why a phone that rebooted and then sat locked
+ * overnight kept a root server down until the morning, though nothing about it needed the unlock.
  *
- * Root is the same kind of start: libsu hands it a shell without touching credential storage, and
- * the starter reads its config from the device-protected copy. It used to wait for the unlock with
- * the rest, which is why a phone that rebooted and then sat locked overnight kept a root server
- * down until the morning, even though nothing about the start needed the unlock.
+ * USB only when [classicPortOpen]: that start is a connection to the phone's own ADB port, and one
+ * that has to be opened first is a connection somebody at a computer makes. A port left open by
+ * `adb tcpip` that survives the reboot is the same thing the wireless start uses, so there is
+ * nothing to wait for.
  *
- * USB needs a person at the prompt, and the system method opens an activity a locked phone cannot
- * show, so both still wait.
+ * The system method opens an activity a locked phone cannot show, so it still waits.
  */
-internal fun canStartBeforeUnlock(method: Int): Boolean =
+internal fun canStartBeforeUnlock(method: Int, classicPortOpen: Boolean = false): Boolean =
     method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS ||
         method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS_NO_NETWORK ||
-        method == moe.shizuku.manager.ShizukuSettings.StartMethod.ROOT
+        method == moe.shizuku.manager.ShizukuSettings.StartMethod.ROOT ||
+        (method == moe.shizuku.manager.ShizukuSettings.StartMethod.USB && classicPortOpen)
