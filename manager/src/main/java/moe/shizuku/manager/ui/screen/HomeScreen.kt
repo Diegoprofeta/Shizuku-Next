@@ -1208,8 +1208,9 @@ private fun readGlobalSwitch(context: Context, key: String): Boolean = runCatchi
 /**
  * The three debugging switches, as three buttons under the server's own.
  *
- * Named short because they share one row: the full names ("Developer options", "USB debugging",
- * "Wireless debugging") do not fit three across, and the tile picker already spells them out.
+ * Full names, one word to a line: three buttons that are otherwise a row of equals looked
+ * unfinished when one wrapped and its neighbours did not, which is what happened on a wide
+ * screen, where the longer two fit on a line and "USB debugging" was the only one broken.
  */
 @Composable
 private fun DebuggingActionButtons(
@@ -1237,11 +1238,10 @@ private fun DebuggingActionButtons(
 @Composable
 private fun RowScope.DebuggingButton(label: String, on: Boolean, onClick: () -> Unit) {
     Button(
-        // Equal height, because two of the three full names wrap and one does not: without this
-        // the row has three buttons of two different heights beside each other.
+        // The height a two-line label needs, whatever this screen's width does to the text.
         modifier = Modifier
             .weight(1f)
-            .heightIn(min = 56.dp),
+            .heightIn(min = 64.dp),
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
         // The theme's own roles rather than a fixed blue: with dynamic colour on, "on" is the
@@ -1256,8 +1256,11 @@ private fun RowScope.DebuggingButton(label: String, on: Boolean, onClick: () -> 
         )
     ) {
         Text(
-            label,
+            // Two lines always, and the break goes after the first word rather than into the
+            // string: a translation keeps its own words, and only where they split changes.
+            label.replaceFirst(' ', '\n'),
             maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelLarge
         )
