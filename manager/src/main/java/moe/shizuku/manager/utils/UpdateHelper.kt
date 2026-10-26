@@ -224,6 +224,16 @@ object UpdateHelper {
             return
         }
 
+        // The server first: it installs the same file with no confirmation, because it runs as
+        // shell. The session installer below is what a phone without a running server gets, and
+        // for an app that cannot hold INSTALL_PACKAGES that one always stops at the system's
+        // dialog - there is no version of it that does not.
+        if (installWithShizuku(apk)) {
+            Diag.info("UpdateHelper", "the update was installed through the server, with no prompt")
+            Toast.makeText(appContext, appContext.getString(R.string.update_success), Toast.LENGTH_SHORT).show()
+            return
+        }
+
         appContext.installPackage(apk) { isSuccess, _ ->
             val toastMsg =
                 if (isSuccess) appContext.getString(R.string.update_success)
@@ -232,6 +242,42 @@ object UpdateHelper {
             // The card that offered this update is gone from the home screen either way, and on a
             // refusal the offer has to come back: see [clearPromptedVersion].
             if (!isSuccess) clearPromptedVersion()
+        }
+    }
+
+    /**
+     * Installs [apk] through the server, answering whether it did.
+     *
+     * The APK goes to `pm install` over stdin (`-S` takes the byte count), which is the one way to
+     * hand it a file that leaves nothing behind: a copy in shared storage would be a second 36 MB
+     * of the same APK sitting in the app's directory after every update. `-d` is there because a
+     * downgrade is a legitimate update on a phone that has moved back to a release.
+     *
+     * False on any failure - no server, no permission, a refused install - and the caller falls
+     * back to the session installer, which asks the user instead.
+     */
+    private suspend fun installWithShizuku(apk: File): Boolean = withContext(Dispatchers.IO) {
+        val process = newShellProcess("pm install -r -d -S ${apk.length()}")
+            ?: return@withContext false
+
+        try {
+            process.outputStream.use { out -> apk.inputStream().use { it.copyTo(out) } }
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+
+            val installed = output.contains("Success")
+            if (!installed) {
+                Diag.warn(
+                    "UpdateHelper",
+                    "the server did not install the update: ${output.trim().takeLast(300)}"
+                )
+            }
+            installed
+        } catch (e: Throwable) {
+            Diag.warn("UpdateHelper", "the server could not install the update", e)
+            false
+        } finally {
+            runCatching { process.destroy() }
         }
     }
 
