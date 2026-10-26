@@ -1253,7 +1253,15 @@ private fun RowScope.DebuggingButton(label: String, on: Boolean, onClick: () -> 
             else MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = if (on) MaterialTheme.colorScheme.onPrimary
             else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        ),
+        // On the pure black theme that off container is black as well, so the button itself
+        // disappeared into the page and left three labels floating with nothing around them.
+        // The same hairline the other quiet buttons wear is what says where it is.
+        border = if (LocalAmoledTheme.current && !on) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        } else {
+            null
+        }
     ) {
         Text(
             // Two lines always, and the break goes after the first word rather than into the
