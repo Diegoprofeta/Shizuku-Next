@@ -82,11 +82,15 @@ class StartNowDecisionTest {
     }
 
     @Test
-    fun `only the wireless methods can start before the unlock`() {
+    fun `the wireless methods and root can start before the unlock`() {
         assertTrue(canStartBeforeUnlock(ShizukuSettings.StartMethod.WIRELESS))
         assertTrue(canStartBeforeUnlock(ShizukuSettings.StartMethod.WIRELESS_NO_NETWORK))
+        // Root was the one that waited for no reason: libsu needs no credential storage, so a
+        // phone that rebooted and stayed locked kept a root server down until it was unlocked.
+        assertTrue(canStartBeforeUnlock(ShizukuSettings.StartMethod.ROOT))
+        // USB needs somebody at the prompt, and the system method opens an activity a locked
+        // phone cannot show.
         assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.USB))
-        assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.ROOT))
         assertFalse(canStartBeforeUnlock(ShizukuSettings.StartMethod.SYSTEM))
     }
 }

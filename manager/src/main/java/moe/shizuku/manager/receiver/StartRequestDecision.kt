@@ -5,7 +5,10 @@ enum class StartDecision {
     /** Go ahead and start. */
     START,
 
-    /** Go ahead and start, before the unlock: in the foreground service, never in WorkManager. */
+    /**
+     * Go ahead and start, before the unlock: never through WorkManager. A wireless start runs in
+     * the foreground service, a root start runs directly.
+     */
     START_LOCKED,
 
     /** The start cannot be made before the unlock; the unlock asks for it again. */

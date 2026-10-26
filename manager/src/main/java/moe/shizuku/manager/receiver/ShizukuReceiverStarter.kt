@@ -180,8 +180,9 @@ object ShizukuReceiverStarter {
         // failing silently. The setting stays Root, so root coming back restores the method
         // on the next start without the user having to pick it again.
         //
-        // Not asked before the unlock: probing root spawns a shell, and the method is a wireless one
-        // already (that is what [canStartBeforeUnlock] says), which the guard would not change.
+        // Not asked before the unlock: the guard exists to fall back when root has gone, and it
+        // answers by spawning a shell. A locked start is made with the method as it is asked for,
+        // and [rootStart] says so itself when root is not there, which is the same answer.
         val method = if (lockedStart) startMethod else StartMethodGuard.resolve(startMethod)
 
         StartStatusReporter.starting()
@@ -435,7 +436,16 @@ object ShizukuReceiverStarter {
     }
 
     private fun rootStart(context: Context) {
-        if (!Shell.getShell().isRoot) {
+        // Reached before the unlock too now, where a shell may not be ready at all: libsu is given
+        // one by the root manager, and a refusal there is a start that cannot be made rather than
+        // an exception out of a request nobody asked a question of.
+        val shell = runCatching { Shell.getShell() }.getOrElse {
+            Diag.warn(AppConstants.TAG, "No root shell to start with", it)
+            StartStatusReporter.failed(context.getString(R.string.start_failed_root_unavailable))
+            ShizukuStateMachine.markStartFailed()
+            return
+        }
+        if (!shell.isRoot) {
             // [start] has already dropped root when the device doesn't have it, so reaching
             // here means it was revoked in between. Say so instead of returning silently:
             // the card would otherwise sit on "starting" for a start that never happened.

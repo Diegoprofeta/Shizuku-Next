@@ -227,16 +227,22 @@ class WatchdogService : Service() {
         // The boot gate: start on boot off and no run yet in this boot means the server is down
         // because nobody asked for it, and starting it here would be a boot start by another name.
         //
-        // And the unlock: every restart here ends in WorkManager or in a direct TCP connection
-        // that a reboot has already taken away, and neither is there before the first unlock. The
-        // process can be this early because the app is direct-boot aware. Waited out rather than
-        // tried; the unlock hook starts the watchdog again, and its probe comes back here.
+        // And the unlock: a restart that ends in WorkManager or in a direct TCP connection has
+        // nothing to work with before the first unlock, since neither is there yet. The process
+        // can be this early because the app is direct-boot aware. Waited out rather than tried;
+        // the unlock hook starts the watchdog again, and its probe comes back here.
+        //
+        // Root is the exception: it needs neither, so a phone that rebooted and sat locked all
+        // night can be recovered without waiting for somebody to pick it up. The wireless start
+        // still waits, because before the unlock it is made in a foreground service this loop
+        // does not drive.
         when (decideStartNow(
             applicationContext.isUserUnlockedCompat(),
             ShizukuSettings.isWatchdogStartAllowed(),
-            ShizukuSettings.getManuallyStopped()
+            ShizukuSettings.getManuallyStopped(),
+            canStartLocked = ShizukuSettings.getStartMethod() == ShizukuSettings.StartMethod.ROOT
         )) {
-            StartNowDecision.START -> Unit
+            StartNowDecision.START, StartNowDecision.START_LOCKED -> Unit
             StartNowDecision.SKIP_STOPPED -> {
                 Diag.debug(TAG, "Restart attempt skipped: one is expected, or the stop was deliberate")
                 return
@@ -245,9 +251,7 @@ class WatchdogService : Service() {
                 Diag.debug(TAG, "Restart attempt skipped: the server has not run since boot")
                 return
             }
-            // The watchdog does not ask for the start that can be made before the unlock (it passes
-            // no such method), so START_LOCKED is not an answer it gets; it waits like the rest.
-            StartNowDecision.DEFER_UNTIL_UNLOCK, StartNowDecision.START_LOCKED -> {
+            StartNowDecision.DEFER_UNTIL_UNLOCK -> {
                 Diag.debug(TAG, "Restart deferred until the user is unlocked${BootTimeline.suffix()}")
                 pendingRestart = true
                 return

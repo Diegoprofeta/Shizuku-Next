@@ -51,10 +51,19 @@ internal fun decideStartNow(
 /**
  * Whether [method] can be started before the first unlock.
  *
- * Only the two wireless ones: what they use is the saved settings and key (device-protected
- * storage), the system settings and the network. USB needs the person at the prompt, root and
- * system start from places that are not there yet.
+ * The two wireless ones and root. Wireless needs only the saved settings and key
+ * (device-protected storage), the system settings and the network, all of which are there while
+ * the phone is locked.
+ *
+ * Root is the same kind of start: libsu hands it a shell without touching credential storage, and
+ * the starter reads its config from the device-protected copy. It used to wait for the unlock with
+ * the rest, which is why a phone that rebooted and then sat locked overnight kept a root server
+ * down until the morning, even though nothing about the start needed the unlock.
+ *
+ * USB needs a person at the prompt, and the system method opens an activity a locked phone cannot
+ * show, so both still wait.
  */
 internal fun canStartBeforeUnlock(method: Int): Boolean =
     method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS ||
-        method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS_NO_NETWORK
+        method == moe.shizuku.manager.ShizukuSettings.StartMethod.WIRELESS_NO_NETWORK ||
+        method == moe.shizuku.manager.ShizukuSettings.StartMethod.ROOT
