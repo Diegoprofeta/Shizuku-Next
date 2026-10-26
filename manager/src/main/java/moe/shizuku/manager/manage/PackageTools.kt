@@ -73,8 +73,10 @@ enum class OpMode(val id: String) {
 
 data class AppOp(
     val name: String,
-    @StringRes val label: Int,
-    @StringRes val note: Int,
+    /** Already resolved: an op the app does not describe is named after the platform's name. */
+    val label: String,
+    /** What it does, for the ops worth a sentence; null for the rest. */
+    val note: String?,
     val mode: OpMode
 )
 
@@ -352,30 +354,90 @@ object PackageTools {
         return parts.joinToString("|")
     }
 
+    /**
+     * Every op the platform reports for this app, with the ones this app can describe first.
+     *
+     * The list used to be the fourteen in [OPS], which meant an op that was not curated could not
+     * be seen or changed here at all - the complaint in issue #147, from somebody who kept a
+     * second app open for the rest. What the platform reports is the honest list: the shell prints
+     * every op the app has a mode for, which is the same set `appops set` will accept, so it is
+     * read and shown whole. The curated ones keep their sentences; the rest are named after the
+     * platform's own name for them.
+     */
     private fun readOps(context: Context, packageName: String): List<AppOp> {
         // `cmd appops` is the modern entry point; the old `appops` binary still answers on
         // a few releases where the cmd is unavailable.
-        val output = runShellCommand("cmd appops get $packageName")
-            ?: runShellCommand("appops get $packageName")
-            ?: return OPS.map { AppOp(it.first, it.second, it.third, OpMode.DEFAULT) }
+        val modes = parseOpModes(
+            runShellCommand("cmd appops get $packageName")
+                ?: runShellCommand("appops get $packageName")
+        )
 
-        val modes = HashMap<String, OpMode>()
-        for (line in output.lineSequence()) {
+        // The curated ones are always drawn, in the order they are written: an op the platform
+        // did not print is shown in its default state rather than dropped, which is how this list
+        // behaved before it followed the platform.
+        val described = OPS.map { (name, label, note) ->
+            AppOp(
+                name,
+                context.getString(label),
+                context.getString(note),
+                modes[name] ?: OpMode.DEFAULT
+            )
+        }
+
+        val describedNames = described.mapTo(HashSet()) { it.name }
+        val rest = modes.entries
+            .filterNot { it.key in describedNames }
+            .sortedBy { it.key }
+            .map { (name, mode) -> AppOp(name, prettyOpName(name), null, mode) }
+
+        return described + rest
+    }
+
+    /**
+     * The ops and modes in `appops get` output.
+     *
+     * Read from the shell's own answer rather than from a list kept here, because the set of ops
+     * belongs to the platform and its vendor: MIUI and OnePlus add their own, and a list compiled
+     * into this app would be wrong on both while looking complete. Lines are `OP: mode`, or
+     * `OP: mode; telemetry=...`, sometimes under a `Uid mode:` heading that only marks the first
+     * line of that block.
+     */
+    internal fun parseOpModes(output: String?): LinkedHashMap<String, OpMode> {
+        val modes = LinkedHashMap<String, OpMode>()
+        output?.lineSequence()?.forEach { line ->
             val trimmed = line.trim()
-            if (trimmed.isEmpty()) continue
-            // Either "OP: mode" or a prefixed "something: OP: mode"; the op name is the
-            // second-to-last field and the mode is the last, whichever shape it is.
-            val fields = trimmed.split(':')
-            if (fields.size < 2) continue
-            val op = fields[fields.size - 2].trim()
-            if (op.isEmpty() || !op.all { it.isUpperCase() || it == '_' || it.isDigit() }) continue
-            val mode = OpMode.from(fields.last().trim().substringBefore(';').trim().substringBefore(' '))
-            if (mode != OpMode.DEFAULT) modes[op] = mode
-        }
+            if (trimmed.isEmpty()) return@forEach
 
-        return OPS.map { (name, label, note) ->
-            AppOp(name, label, note, modes[name] ?: OpMode.DEFAULT)
+            // The op is the second-to-last field and the mode is the last, whichever shape the
+            // line has; a mode carries a `;` tail when the platform adds timings to it.
+            val fields = trimmed.split(':')
+            if (fields.size < 2) return@forEach
+            val op = fields[fields.size - 2].trim()
+            if (op.isEmpty() || !op.all { it.isUpperCase() || it == '_' || it.isDigit() }) {
+                return@forEach
+            }
+
+            modes[op] = OpMode.from(
+                fields.last().trim().substringBefore(';').trim().substringBefore(' ')
+            )
         }
+        return modes
+    }
+
+    /**
+     * A name for an op this app does not describe, from the platform's own name for it.
+     *
+     * READ_HEART_RATE is a name, not a sentence: underscores become spaces and only the first
+     * word is capitalised, so it reads as something in a list beside the described ones.
+     */
+    internal fun prettyOpName(name: String): String {
+        if (name.isEmpty()) return name
+        if (!name.all { it.isUpperCase() || it == '_' || it.isDigit() }) return name
+
+        val words = name.split('_').filter { it.isNotEmpty() }
+        if (words.isEmpty()) return name
+        return words.joinToString(" ") { it.lowercase() }
+            .replaceFirstChar { it.titlecase() }
     }
 
     private fun readBucket(context: Context, packageName: String): StandbyBucket? =

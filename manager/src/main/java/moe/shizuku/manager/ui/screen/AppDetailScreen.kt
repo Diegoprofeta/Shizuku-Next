@@ -314,8 +314,13 @@ fun AppDetailScreen(
                             app.ops.forEach { op ->
                                 item {
                                     SegmentedListItem(
-                                        headlineContent = { Text(stringResource(op.label)) },
-                                        supportingContent = { Text(stringResource(op.note)) },
+                                        // Both are strings already: the ones this app
+                                        // describes are translated, and an op it does not
+                                        // describe is named the way the platform names it.
+                                        headlineContent = { Text(op.label) },
+                                        supportingContent = op.note?.let { note ->
+                                            { Text(note) }
+                                        },
                                         trailingContent = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(
@@ -602,8 +607,8 @@ fun AppDetailScreen(
 
     opPicker?.let { op ->
         ModeDialog(
-            title = stringResource(op.label),
-            note = stringResource(op.note),
+            title = op.label,
+            note = op.note.orEmpty(),
             current = op.mode,
             onDismiss = { opPicker = null }
         ) { mode ->
