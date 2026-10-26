@@ -3,10 +3,13 @@ package moe.shizuku.manager.manage
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessibilityNew
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Cable
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeveloperMode
 import androidx.compose.material.icons.outlined.Dns
@@ -17,14 +20,17 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.ui.graphics.vector.ImageVector
 import moe.shizuku.manager.R
+import moe.shizuku.manager.ShizukuApplication
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.receiver.ShizukuReceiverStarter
 import moe.shizuku.manager.service.HidingWatchService
 import moe.shizuku.manager.start.stopShizuku
 import moe.shizuku.manager.utils.ShizukuStateMachine
+import moe.shizuku.manager.utils.runShellCommand
 import rikka.shizuku.Shizuku
 
 /**
@@ -45,7 +51,15 @@ import rikka.shizuku.Shizuku
  * chain, this app's settings for the gates, the server for whether it is running. Anything else
  * would describe the last tap rather than the phone.
  */
-enum class LabSwitch(@StringRes val label: Int, val image: ImageVector) {
+enum class LabSwitch(
+    @StringRes val label: Int,
+    val image: ImageVector,
+    /**
+     * The platform setting this switch is, for the three that are a setting rather than this app's
+     * own state. Null for everything else.
+     */
+    private val settingKey: String? = null
+) {
 
     /** The service itself: starting it, or stopping it the way the app's own stop does. */
     SERVICE(R.string.lab_switch_service, Icons.Outlined.PowerSettingsNew),
@@ -54,12 +68,32 @@ enum class LabSwitch(@StringRes val label: Int, val image: ImageVector) {
 
     AUTOSTART(R.string.tab_autostart, Icons.Outlined.RestartAlt),
 
+    // The three settings themselves, on and off, which is not the same question as hiding them
+    // from an app: these are the platform's own switches, and turning one off here turns it off.
+    DEVELOPER_OPTIONS(
+        R.string.lab_switch_developer_options,
+        Icons.Outlined.BugReport,
+        "development_settings_enabled"
+    ),
+    USB_DEBUGGING(R.string.lab_switch_usb_debugging, Icons.Outlined.Cable, "adb_enabled"),
+    WIRELESS_DEBUGGING(
+        R.string.lab_switch_wireless_debugging,
+        Icons.Outlined.Wifi,
+        "adb_wifi_enabled"
+    ),
+
     /** All six hiding settings at once, for a phone that should stop hiding everything. */
     HIDING(R.string.lab_switch_hiding, Icons.Outlined.VisibilityOff),
 
-    HIDE_DEVELOPER_OPTIONS(R.string.hiding_signal_developer_options, Icons.Outlined.DeveloperMode),
-    HIDE_USB_DEBUGGING(R.string.hiding_signal_usb_debugging, Icons.Outlined.Usb),
-    HIDE_WIRELESS_DEBUGGING(R.string.hiding_signal_wireless_debugging, Icons.Outlined.WifiOff),
+    HIDE_DEVELOPER_OPTIONS(
+        R.string.lab_switch_hide_developer_options,
+        Icons.Outlined.DeveloperMode
+    ),
+    HIDE_USB_DEBUGGING(R.string.lab_switch_hide_usb_debugging, Icons.Outlined.Usb),
+    HIDE_WIRELESS_DEBUGGING(
+        R.string.lab_switch_hide_wireless_debugging,
+        Icons.Outlined.WifiOff
+    ),
     HIDE_ACCESSIBILITY(R.string.hiding_signal_accessibility, Icons.Outlined.AccessibilityNew),
     HIDE_PRIVATE_DNS(R.string.hiding_signal_private_dns, Icons.Outlined.Dns),
     HIDE_VPN(R.string.hiding_signal_vpn, Icons.Outlined.VpnKey),
@@ -106,7 +140,9 @@ enum class LabSwitch(@StringRes val label: Int, val image: ImageVector) {
 
         WATCHDOG -> ShizukuSettings.getWatchdog()
 
-        else -> signal?.let { Hiding.isSignalEnabled(it) }
+        // The platform's own setting. Read without the server: the value is in the settings
+        // provider, which is readable by any app.
+        else -> signal?.let { Hiding.isSignalEnabled(it) } ?: settingKey?.let { readGlobal(it) }
     }
 
     /**
@@ -152,11 +188,42 @@ enum class LabSwitch(@StringRes val label: Int, val image: ImageVector) {
         }
 
         else -> {
-            val signal = signal ?: return null
-            Hiding.setSignalEnabled(signal, on)
-            HidingWatchService.refresh(context)
-            on
+            val hiding = signal
+            when {
+                hiding != null -> {
+                    Hiding.setSignalEnabled(hiding, on)
+                    HidingWatchService.refresh(context)
+                    on
+                }
+
+                else -> settingKey?.let { writeGlobal(context, it, on) }
+            }
         }
+    }
+
+    /** The platform setting [key], or null when it cannot be read. */
+    private fun readGlobal(key: String): Boolean? = runCatching {
+        Settings.Global.getInt(ShizukuApplication.application.contentResolver, key, 0) != 0
+    }.getOrNull()
+
+    /**
+     * Writes the platform setting [key], answering the state it ended up in, or null when it could
+     * not be written.
+     *
+     * The app holds WRITE_SECURE_SETTINGS once it has attached to a running server, and that is the
+     * copy of the permission these settings need: with it, a tile works with the server stopped,
+     * which is the point of a switch that turns debugging off. A phone that has never run the
+     * server has no such grant, so the shell is tried as the fallback - and that one does need a
+     * server.
+     */
+    private fun writeGlobal(context: Context, key: String, on: Boolean): Boolean? {
+        val value = if (on) 1 else 0
+
+        runCatching { Settings.Global.putInt(context.contentResolver, key, value) }
+        if (readGlobal(key) == on) return on
+
+        runShellCommand("settings put global $key $value")
+        return if (readGlobal(key) == on) on else null
     }
 
     /** Switches the feature to its other state, answering the new one, or null when it could not. */

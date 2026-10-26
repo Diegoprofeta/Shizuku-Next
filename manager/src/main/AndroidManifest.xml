@@ -352,6 +352,39 @@
         </service>
 
         <service
+            android:name=".service.DeveloperOptionsTileService"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/lab_switch_developer_options"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.UsbDebuggingTileService"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/lab_switch_usb_debugging"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.WirelessDebuggingTileService"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/lab_switch_wireless_debugging"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".service.HidingTileService"
             android:enabled="true"
             android:exported="true"
@@ -487,6 +520,51 @@
             android:enabled="true"
             android:exported="false"
             android:label="@string/tab_autostart">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="moe.shizuku.manager.action.LAB_SWITCH_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lab_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.DeveloperOptionsWidgetProvider"
+            android:enabled="true"
+            android:exported="false"
+            android:label="@string/lab_switch_developer_options">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="moe.shizuku.manager.action.LAB_SWITCH_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lab_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.UsbDebuggingWidgetProvider"
+            android:enabled="true"
+            android:exported="false"
+            android:label="@string/lab_switch_usb_debugging">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="moe.shizuku.manager.action.LAB_SWITCH_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lab_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.WirelessDebuggingWidgetProvider"
+            android:enabled="true"
+            android:exported="false"
+            android:label="@string/lab_switch_wireless_debugging">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="moe.shizuku.manager.action.LAB_SWITCH_CHANGED" />
