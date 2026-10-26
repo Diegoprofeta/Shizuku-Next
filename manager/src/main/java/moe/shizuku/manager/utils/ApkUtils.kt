@@ -174,8 +174,13 @@ fun Context.installPackage(
 ) {
     val installer = appContext.packageManager.packageInstaller
 
-    val sessionParams = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-    val sessionId = installer.createSession(sessionParams)
+    // Asked for the install the platform can make without a dialog: an update of this app, or of
+    // an app this one installed, from an app holding UPDATE_PACKAGES_WITHOUT_USER_ACTION. When the
+    // platform will not do that - a fresh install, another installer's app, a throttled repeat - it
+    // refuses the session outright or answers PENDING_USER_ACTION, and both are handled: the first
+    // by creating it again in the shape that asks, the second by the receiver opening the dialog.
+    val sessionId = runCatching { installer.createSession(silentSessionParams(apk)) }
+        .getOrElse { installer.createSession(plainSessionParams(apk)) }
     val session = installer.openSession(sessionId)
 
     apk.inputStream().use { input ->
@@ -190,6 +195,32 @@ fun Context.installPackage(
     session.commit(pendingIntent.intentSender)
     session.close()
 }
+
+/**
+ * A session that asks the platform to install without a dialog, where it can.
+ *
+ * `USER_ACTION_NOT_REQUIRED` needs `UPDATE_PACKAGES_WITHOUT_USER_ACTION`, which is a normal
+ * permission and is in the manifest; on its own that is not enough for the platform to be silent -
+ * it also wants the install to be a self update or one by the app that installed the package, and
+ * falls back to the dialog otherwise. `setRequestUpdateOwnership` is the same request in the newer
+ * spelling: on Android 14 and up it asks to be the owner of the update, which keeps a later update
+ * of the same app silent as well.
+ */
+private fun silentSessionParams(apk: File): PackageInstaller.SessionParams =
+    plainSessionParams(apk).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            setRequestUpdateOwnership(true)
+        }
+    }
+
+/** A session in the platform's default shape, which asks the user. */
+private fun plainSessionParams(apk: File): PackageInstaller.SessionParams =
+    PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+        setSize(apk.length())
+    }
 
 /**
  * Wakes the stub the moment it is installed.

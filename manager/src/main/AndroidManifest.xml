@@ -66,6 +66,11 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Normal permission, and the one that decides whether the platform's session installer can
+         skip its confirmation: with it, an update of this app (or of an app this one installed)
+         committed with USER_ACTION_NOT_REQUIRED installs without a dialog. Everything the platform
+         still wants confirmed comes back as PENDING_USER_ACTION and is shown. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
