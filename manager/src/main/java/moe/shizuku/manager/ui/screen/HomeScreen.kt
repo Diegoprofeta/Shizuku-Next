@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -83,6 +84,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1235,15 +1237,24 @@ private fun DebuggingActionButtons(
 @Composable
 private fun RowScope.DebuggingButton(label: String, on: Boolean, onClick: () -> Unit) {
     Button(
-        modifier = Modifier.weight(1f),
+        // Equal height, because two of the three full names wrap and one does not: without this
+        // the row has three buttons of two different heights beside each other.
+        modifier = Modifier
+            .weight(1f)
+            .heightIn(min = 56.dp),
         onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (on) RestartBlue else MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
         )
     ) {
-        Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+        Text(
+            label,
+            maxLines = 2,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelLarge
+        )
     }
 }
 
