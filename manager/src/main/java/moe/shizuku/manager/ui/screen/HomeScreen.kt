@@ -1244,9 +1244,15 @@ private fun RowScope.DebuggingButton(label: String, on: Boolean, onClick: () -> 
             .heightIn(min = 56.dp),
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+        // The theme's own roles rather than a fixed blue: with dynamic colour on, "on" is the
+        // wallpaper's accent, and with it off it is the brand seed - the same pair the rest of the
+        // screen is drawn in. Restart keeps its blue on purpose, because it is an action and not a
+        // state, and a state that changes colour with the wallpaper would stop being recognisable.
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (on) RestartBlue else MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            containerColor = if (on) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = if (on) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
     ) {
         Text(
