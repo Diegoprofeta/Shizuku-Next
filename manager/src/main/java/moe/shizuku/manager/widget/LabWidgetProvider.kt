@@ -6,6 +6,8 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
+import android.util.TypedValue
 import android.widget.RemoteViews
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,16 @@ abstract class LabWidgetProvider(private val switch: LabSwitch) : AppWidgetProvi
         appWidgetIds: IntArray
     ) {
         draw(context, appWidgetIds)
+    }
+
+    /** A resize is a redraw: the card and the icon-only tile are two layouts, not one squeezed. */
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle
+    ) {
+        draw(context, intArrayOf(appWidgetId))
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -106,19 +118,42 @@ abstract class LabWidgetProvider(private val switch: LabSwitch) : AppWidgetProvi
 
         val manager = AppWidgetManager.getInstance(context)
         for (id in ids) {
-            manager.updateAppWidget(id, views(context, on))
+            manager.updateAppWidget(id, views(context, on, compact = isCompact(context, id)))
         }
     }
 
-    private fun views(context: Context, on: Boolean?): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_lab_switch)
+    /**
+     * Whether this instance has been shrunk past the size the row needs.
+     *
+     * A launcher reports the bounds an instance may occupy; when the narrow one no longer fits the
+     * title and the state beside the icon, the card is the wrong shape and the small layout - the
+     * mark alone - is the right one. Asked of the instance rather than of the screen, because two
+     * instances of the same switch can be different sizes.
+     */
+    private fun isCompact(context: Context, id: Int): Boolean {
+        val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(id)
+        return isCompact(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH))
+    }
+
+    private fun views(context: Context, on: Boolean?, compact: Boolean): RemoteViews {
+        val views = RemoteViews(
+            context.packageName,
+            if (compact) R.layout.widget_lab_switch_compact else R.layout.widget_lab_switch
+        )
         val look = LabSwitch.Look.of(on)
 
-        views.setTextViewText(R.id.widget_title, context.getString(switch.label))
-        views.setTextViewText(R.id.widget_state, context.getString(look.label))
+        if (!compact) {
+            views.setTextViewText(R.id.widget_title, context.getString(switch.label))
+            views.setTextViewText(R.id.widget_state, context.getString(look.label))
+        }
 
-        // The very icon the Labs screen draws, at the size the card reserves for it.
-        val size = (26 * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        // The very icon the Labs screen draws, at the size the layout reserves for it.
+        val iconDp = if (compact) 28 else 26
+        val size = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            iconDp.toFloat(),
+            context.resources.displayMetrics
+        ).toInt().coerceAtLeast(1)
         views.setImageViewBitmap(R.id.widget_icon, SwitchIcon.bitmap(switch.image, size))
 
         // Drawn rather than described: the same icon, dimmed when the feature is off, so the two
@@ -150,6 +185,23 @@ abstract class LabWidgetProvider(private val switch: LabSwitch) : AppWidgetProvi
     companion object {
         /** A click, from any instance. */
         const val ACTION_TOGGLE = "moe.shizuku.manager.action.LAB_WIDGET_TOGGLE"
+
+        /**
+         * Below this the row cannot hold the icon and its name: a one-cell widget is about 70dp
+         * wide, and two cells are about 140dp, so the line sits between them.
+         *
+         * The height is not asked: a one-row widget is about 40dp tall whether it is one cell wide
+         * or two, so it says nothing about which layout fits.
+         */
+        internal const val COMPACT_WIDTH_DP = 100
+
+        /**
+         * Whether a widget [widthDp] wide is the small, icon-only one.
+         *
+         * A launcher that has not reported a size answers zero, which is not a one-cell widget:
+         * until it speaks, the card is the shape to draw.
+         */
+        internal fun isCompact(widthDp: Int): Boolean = widthDp in 1 until COMPACT_WIDTH_DP
 
         private const val OPAQUE = 0xFFFFFFFF.toInt()
         private const val DIMMED = 0x66FFFFFF
