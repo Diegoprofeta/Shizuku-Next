@@ -174,6 +174,11 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
         BinderSender.register(this);
 
+        // Before the hand-over below, not after: from that point on apps are waiting on this
+        // process, and a looper that stops answering while they wait is the case the manager's
+        // watchdog cannot see. What it needs is a binder death, which is what this produces.
+        ServerWatchdog.start(mainHandler);
+
         // The manager first. It is the one waiting on the start screen, and the clients are only
         // reached after listing every package that asks for the permission and starting the provider
         // of each, which on a phone with many of them is the longer part. Nothing depends on the
@@ -284,6 +289,9 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     public void exit() {
         enforceManagerPermission("exit");
         LOGGER.i("exit");
+        // An exit somebody asked for is not a hang, and the monitor would otherwise be free to
+        // report one in the moment between this call and the process going away.
+        ServerWatchdog.stop();
         System.exit(0);
     }
 
