@@ -11,6 +11,7 @@
     <ImageView
         android:id="@+id/widget_icon"
         android:layout_width="28dp"
+        android:tint="@color/widget_icon_tint"
         android:layout_height="28dp"
         android:layout_gravity="center"
         android:contentDescription="@null" />

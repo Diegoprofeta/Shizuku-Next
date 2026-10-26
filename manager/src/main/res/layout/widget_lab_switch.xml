@@ -22,6 +22,7 @@
     <ImageView
         android:id="@+id/widget_icon"
         android:layout_width="26dp"
+        android:tint="@color/widget_icon_tint"
         android:layout_height="26dp"
         android:contentDescription="@null" />
 

@@ -161,11 +161,13 @@ abstract class LabWidgetProvider(private val switch: LabSwitch) : AppWidgetProvi
 
         // Drawn rather than described: the same icon, dimmed when the feature is off, so the two
         // states are told apart at a glance from across the room.
-        views.setInt(
-            R.id.widget_icon,
-            "setColorFilter",
-            if (look == LabSwitch.Look.ON) OPAQUE else DIMMED
-        )
+        //
+        // The colour is the layout's job, not this one's. A tint applied here is resolved when the
+        // widget is drawn and then stored in the RemoteViews, so switching the system theme left
+        // a dark icon on a card that had just turned dark with it - the shield vanished. The
+        // layout carries `android:tint="@color/widget_icon_tint"`, which the launcher resolves
+        // again on every inflation, and only the alpha is set from here.
+        views.setFloat(R.id.widget_icon, "setAlpha", if (look == LabSwitch.Look.ON) 1f else 0.42f)
 
         views.setOnClickPendingIntent(R.id.widget_root, toggleIntent(context))
         return views
@@ -206,8 +208,6 @@ abstract class LabWidgetProvider(private val switch: LabSwitch) : AppWidgetProvi
          */
         internal fun isCompact(widthDp: Int): Boolean = widthDp in 1 until COMPACT_WIDTH_DP
 
-        private const val OPAQUE = 0xFFFFFFFF.toInt()
-        private const val DIMMED = 0x66FFFFFF
     }
 }
 
